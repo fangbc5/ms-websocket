@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package grpc.health.v1;
+
+// gRPC 健康检查服务
+// 基于标准的 gRPC Health Checking Protocol
+service Health {
+  // 检查服务健康状态
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+  
+  // 监听服务健康状态变化（流式响应）
+  rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}
+
+// 健康检查请求
+message HealthCheckRequest {
+  // 要检查的服务名称
+  // 空字符串表示检查整个服务器的健康状态
+  string service = 1;
+}
+
+// 健康检查响应
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;  // 仅用于 Watch 方法
+  }
+  ServingStatus status = 1;
+}
+
