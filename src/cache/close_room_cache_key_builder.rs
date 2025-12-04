@@ -3,14 +3,15 @@ use fbc_starter::ID_FIELD;
 use fbc_starter::cache::{CHAT, CacheKey, CacheKeyBuilder, ValueType, chat, get_cache_prefix};
 use std::time::Duration;
 
+use crate::types::RoomId;
+
 /// 关闭房间缓存键构建器
 pub struct CloseRoomCacheKeyBuilder;
 
 impl CloseRoomCacheKeyBuilder {
     /// 构建缓存键
-    pub fn builder(room_id: impl ToString) -> CacheKey {
-        let room_id_str = room_id.to_string();
-        CloseRoomCacheKeyBuilder.key(&[&room_id_str])
+    pub fn builder(room_id: RoomId) -> CacheKey {
+        CloseRoomCacheKeyBuilder.key(&[&room_id])
     }
 }
 

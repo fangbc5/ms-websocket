@@ -4,12 +4,14 @@ use fbc_starter::cache::{
 };
 use std::time::Duration;
 
+use crate::types::RoomId;
+
 /// 房间管理员元数据缓存键构建器
 pub struct RoomAdminMetadataCacheKeyBuilder;
 
 impl RoomAdminMetadataCacheKeyBuilder {
     /// 构建缓存键
-    pub fn builder(room_id: i64) -> CacheKey {
+    pub fn builder(room_id: RoomId) -> CacheKey {
         RoomAdminMetadataCacheKeyBuilder.key(&[&room_id])
     }
 }

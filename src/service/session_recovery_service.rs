@@ -9,7 +9,7 @@
 /// - 用户网络断开后重新连接
 /// - 用户切换设备后重新登录
 /// - 服务端重启后恢复用户状态
-use crate::service::video_chat_service::VideoChatService;
+use crate::{service::video_chat_service::VideoChatService, types::UserId};
 use std::sync::Arc;
 
 /// 会话恢复服务
@@ -24,7 +24,7 @@ impl SessionRecoveryService {
     }
 
     /// 恢复用户会话
-    pub async fn recover_user_sessions(&self, uid: i64) -> anyhow::Result<()> {
+    pub async fn recover_user_sessions(&self, uid: UserId) -> anyhow::Result<()> {
         // 获取用户所有房间
         let rooms = self.video_service.get_user_rooms(uid).await?;
 

@@ -1,10 +1,12 @@
+use crate::types::{RoomId, UserId};
+
 /// 网络质量报告 VO
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NetworkQualityVO {
     /// 房间 ID
-    pub room_id: u64,
+    pub room_id: RoomId,
     /// 用户 ID
-    pub user_id: u64,
+    pub user_id: UserId,
     /// 网络质量评分 (0.0-1.0)
     pub quality: f64,
     /// 报告时间戳（毫秒）
@@ -13,7 +15,7 @@ pub struct NetworkQualityVO {
 
 impl NetworkQualityVO {
     /// 创建新的网络质量报告（自动设置当前时间戳）
-    pub fn new(room_id: u64, user_id: u64, quality: f64) -> Self {
+    pub fn new(room_id: RoomId, user_id: UserId, quality: f64) -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)

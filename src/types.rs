@@ -4,7 +4,7 @@
 pub type SessionId = String;
 
 /// 房间 ID 类型
-pub type RoomId = String;
+pub type RoomId = u64;
 
 /// 用户 ID 类型
 pub type UserId = u64;

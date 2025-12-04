@@ -1,3 +1,4 @@
+use crate::enums::WsMsgTypeEnum;
 /// 已读消息处理器
 use crate::model::dto::ReadMessageDto;
 use crate::model::ws_base_resp::WsBaseReq;
@@ -24,7 +25,7 @@ impl ReadProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for ReadProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "read" || req.r#type == "READ"
+        WsMsgTypeEnum::Read.eq(req.r#type)
     }
 
     async fn process(

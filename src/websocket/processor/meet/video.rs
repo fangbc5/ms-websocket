@@ -1,8 +1,9 @@
+use crate::enums::WsMsgTypeEnum;
 /// 视频信令处理器
 
 use crate::model::vo::heartbeat_req::HeartbeatReq;
 use crate::model::ws_base_resp::WsBaseReq;
-use crate::types::{ClientId, SessionId, UserId};
+use crate::types::{ClientId, RoomId, SessionId, UserId};
 use crate::websocket::processor::message_processor::MessageProcessor;
 use crate::websocket::session_manager::Session;
 use serde::{Deserialize, Serialize};
@@ -13,9 +14,9 @@ use tracing::info;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VideoSignalReq {
     /// 目标用户 ID
-    pub target_uid: Option<u64>,
+    pub target_uid: Option<UserId>,
     /// 房间 ID
-    pub room_id: u64,
+    pub room_id: RoomId,
     /// WebRTC 信令内容
     pub signal: String,
     /// 信令类型 (offer/answer/candidate)
@@ -39,10 +40,7 @@ impl VideoProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for VideoProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "webrtc_signal"
-            || req.r#type == "WEBRTC_SIGNAL"
-            || req.r#type == "video_heartbeat"
-            || req.r#type == "VIDEO_HEARTBEAT"
+        WsMsgTypeEnum::WebrtcSignal.eq(req.r#type) || WsMsgTypeEnum::VideoHeartbeat.eq(req.r#type)
     }
 
     async fn process(
@@ -53,8 +51,8 @@ impl MessageProcessor for VideoProcessor {
         _client_id: &ClientId,
         req: WsBaseReq,
     ) {
-        match req.r#type.as_str() {
-            "webrtc_signal" | "WEBRTC_SIGNAL" => {
+        match WsMsgTypeEnum::from(req.r#type) {
+            Some(WsMsgTypeEnum::WebrtcSignal) => {
                 // 处理 WebRTC 信令
                 let signal_req: VideoSignalReq = match serde_json::from_value(req.data.clone()) {
                     Ok(req) => req,
@@ -72,7 +70,7 @@ impl MessageProcessor for VideoProcessor {
                 // TODO: 转发信令到房间成员
                 // video_service.forwardSignal(uid, signal_req.room_id, signal_req.signal, signal_req.signal_type);
             }
-            "video_heartbeat" | "VIDEO_HEARTBEAT" => {
+            Some(WsMsgTypeEnum::VideoHeartbeat) => {
                 // 处理视频心跳
                 let heartbeat: HeartbeatReq = match serde_json::from_value(req.data.clone()) {
                     Ok(hb) => hb,

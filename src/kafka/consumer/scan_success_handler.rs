@@ -38,6 +38,10 @@ impl KafkaMessageHandler for ScanSuccessHandler {
         vec!["user_scan_send_msg".to_string()]
     }
 
+    fn group_id(&self) -> String {
+        "ws-scan-group".to_string()
+    }
+
     async fn handle(&self, message: Message) {
         match serde_json::from_value::<ScanSuccessMessageDTO>(message.data) {
             Ok(dto) => {

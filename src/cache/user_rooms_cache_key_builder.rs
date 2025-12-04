@@ -2,12 +2,14 @@
 use fbc_starter::cache::{CacheKey, CacheKeyBuilder, VIDEO_CALL, get_cache_prefix};
 use std::time::Duration;
 
+use crate::types::UserId;
+
 /// 用户房间缓存键构建器
 pub struct UserRoomsCacheKeyBuilder;
 
 impl UserRoomsCacheKeyBuilder {
     /// 构建缓存键
-    pub fn build(key: i64) -> CacheKey {
+    pub fn build(key: UserId) -> CacheKey {
         UserRoomsCacheKeyBuilder.key(&[&key])
     }
 }

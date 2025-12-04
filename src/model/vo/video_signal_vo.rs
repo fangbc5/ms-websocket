@@ -1,10 +1,12 @@
+use crate::types::{RoomId, UserId};
+
 /// 视频信令 VO
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VideoSignalVO {
     /// 信令发送者 ID
-    pub sender_id: u64,
+    pub sender_id: UserId,
     /// 房间 ID
-    pub room_id: u64,
+    pub room_id: RoomId,
     /// WebRTC 信令内容
     pub signal: String,
     /// 信令类型
@@ -16,7 +18,7 @@ pub struct VideoSignalVO {
 
 impl VideoSignalVO {
     /// 创建新的视频信令（自动设置当前时间戳）
-    pub fn new(sender_id: u64, room_id: u64, signal_type: String, signal: String) -> Self {
+    pub fn new(sender_id: UserId, room_id: RoomId, signal_type: String, signal: String) -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)

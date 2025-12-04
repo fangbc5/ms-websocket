@@ -39,6 +39,10 @@ impl KafkaMessageHandler for MsgLoginHandler {
         vec!["user_login_send_msg".to_string()]
     }
 
+    fn group_id(&self) -> String {
+        "ws-login-group".to_string()
+    }
+
     async fn handle(&self, message: Message) {
         match serde_json::from_value::<LoginMessageDTO>(message.data) {
             Ok(dto) => {

@@ -1,3 +1,4 @@
+use crate::enums::WsMsgTypeEnum;
 /// 视频呼叫处理器
 
 use crate::model::vo::{
@@ -28,10 +29,7 @@ impl VideoCallProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for VideoCallProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "video_call_request"
-            || req.r#type == "VIDEO_CALL_REQUEST"
-            || req.r#type == "video_call_response"
-            || req.r#type == "VIDEO_CALL_RESPONSE"
+        WsMsgTypeEnum::VideoCallRequest.eq(req.r#type) || WsMsgTypeEnum::VideoCallResponse.eq(req.r#type)
     }
 
     async fn process(
@@ -42,16 +40,10 @@ impl MessageProcessor for VideoCallProcessor {
         _client_id: &ClientId,
         req: WsBaseReq,
     ) {
-        match req.r#type.as_str() {
-            "video_call_request" | "VIDEO_CALL_REQUEST" => {
-                self.handle_call_request(uid, &req).await;
-            }
-            "video_call_response" | "VIDEO_CALL_RESPONSE" => {
-                self.handle_call_response(uid, &req).await;
-            }
-            _ => {
-                tracing::warn!("未知的视频呼叫消息类型: {}", req.r#type);
-            }
+        match WsMsgTypeEnum::from(req.r#type) {
+            Some(WsMsgTypeEnum::VideoCallRequest) => self.handle_call_request(uid, &req).await,
+            Some(WsMsgTypeEnum::VideoCallResponse) => self.handle_call_response(uid, &req).await,
+            _ => tracing::warn!("未知的视频呼叫消息类型: {}", req.r#type),
         }
     }
 }

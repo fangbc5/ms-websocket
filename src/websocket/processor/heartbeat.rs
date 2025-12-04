@@ -1,3 +1,4 @@
+use crate::enums::WsMsgTypeEnum;
 /// 心跳消息处理器
 use crate::model::ws_base_resp::WsBaseReq;
 use crate::types::{ClientId, SessionId, UserId};
@@ -20,8 +21,7 @@ impl HeartbeatProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for HeartbeatProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        // 心跳消息类型通常是 "1" 或 "heartbeat"
-        req.r#type == "1" || req.r#type == "heartbeat"
+        WsMsgTypeEnum::Heartbeat.eq(req.r#type)
     }
 
     async fn process(

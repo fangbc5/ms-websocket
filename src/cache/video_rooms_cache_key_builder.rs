@@ -7,7 +7,7 @@ pub struct VideoRoomsCacheKeyBuilder;
 
 impl VideoRoomsCacheKeyBuilder {
     /// 构建缓存键
-    pub fn build(key: i64) -> CacheKey {
+    pub fn build(key: u64) -> CacheKey {
         VideoRoomsCacheKeyBuilder.key(&[&key])
     }
 }

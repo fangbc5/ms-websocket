@@ -10,13 +10,155 @@ use axum::response::Response;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tokio::task::JoinHandle;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
-/// 心跳超时时间（秒）
-const HEARTBEAT_TIMEOUT: u64 = 30;
+/// WebSocket 连接处理器
+struct ConnectionHandler {
+    session_id: String,
+    session_manager: Arc<crate::websocket::SessionManager>,
+    handler_chain: Arc<crate::websocket::MessageHandlerChain>,
+}
+
+impl ConnectionHandler {
+    fn new(
+        session_id: String,
+        session_manager: Arc<crate::websocket::SessionManager>,
+        handler_chain: Arc<crate::websocket::MessageHandlerChain>,
+    ) -> Self {
+        Self {
+            session_id,
+            session_manager,
+            handler_chain,
+        }
+    }
+
+    /// 从 SessionManager 获取 Session，如果获取不到返回 None
+    fn get_session(&self) -> Option<Arc<Session>> {
+        self.session_manager
+            .sessions
+            .get(&self.session_id)
+            .map(|entry| entry.value().clone())
+    }
+
+    /// 启动写入任务：从通道读取消息并写入 WebSocket
+    fn spawn_writer_task(
+        &self,
+        mut rx: mpsc::Receiver<Message>,
+        mut sender: futures::stream::SplitSink<WebSocket, Message>,
+    ) -> JoinHandle<()> {
+        let session_id = self.session_id.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                match msg {
+                    Message::Close(_) => {
+                        // 发送 Close 消息到 socket，然后退出
+                        let _ = sender.send(Message::Close(None)).await;
+                        let _ = sender.close().await;
+                        break;
+                    }
+                    _ => {
+                        if sender.send(msg).await.is_err() {
+                            error!("发送消息失败: session_id={}", session_id);
+                            break;
+                        }
+                    }
+                }
+            }
+            info!("写入任务结束: session_id={}", session_id);
+        })
+    }
+
+    /// 处理接收到的消息
+    async fn handle_message(&self, msg: Message) -> bool {
+        // 从 SessionManager 获取 Session，如果获取不到说明已被清理，不执行操作
+        let Some(session) = self.get_session() else {
+            warn!("会话不存在，忽略消息: session_id={}", self.session_id);
+            return false;
+        };
+
+        match msg {
+            Message::Text(text) => {
+                session.touch();
+                self.handler_chain
+                    .handle_message(
+                        &session,
+                        &session.id,
+                        session.uid,
+                        &session.client_id,
+                        &text,
+                    )
+                    .await;
+                true
+            }
+            Message::Binary(_) => {
+                session.touch();
+                // TODO: 处理二进制消息
+                true
+            }
+            Message::Ping(payload) => {
+                session.touch();
+                if let Err(e) = session.try_send(Message::Pong(payload)) {
+                    warn!("发送 Pong 失败: {} (通道可能已满)", e);
+                }
+                true
+            }
+            Message::Pong(_) => {
+                session.touch();
+                true
+            }
+            Message::Close(_) => {
+                info!("客户端关闭连接: session_id={}", self.session_id);
+                false
+            }
+        }
+    }
+
+    /// 处理消息读取循环
+    async fn run_message_loop(
+        &self,
+        mut receiver: futures::stream::SplitStream<WebSocket>,
+        mut shutdown: mpsc::Receiver<()>,
+    ) {
+        loop {
+            tokio::select! {
+                // 接收 WebSocket 消息
+                result = receiver.next() => {
+                    match result {
+                        Some(Ok(msg)) => {
+                            if !self.handle_message(msg).await {
+                                // 收到 Close 消息，退出循环
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            warn!("接收消息错误: session_id={}, error={}", self.session_id, e);
+                            break;
+                        }
+                        None => {
+                            // socket 已关闭
+                            info!("主循环退出: session_id={} (socket 已关闭)", self.session_id);
+                            break;
+                        }
+                    }
+                }
+                // 收到关闭信号
+                _ = shutdown.recv() => {
+                    info!("主循环退出: session_id={} (收到关闭信号)", self.session_id);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// 清理连接
+    async fn cleanup(&self) {
+        info!("清理会话: session_id={}", self.session_id);
+        self.session_manager.cleanup_session(&self.session_id);
+    }
+}
 
 /// WebSocket 路由处理器
 pub async fn ws_route(
@@ -69,13 +211,20 @@ async fn handle_connection(
     uid: UserId,
     client_id: ClientId,
 ) {
-    // 创建发送通道
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    // 创建发送通道（有界通道，容量 1000）
+    let (tx, rx) = mpsc::channel(1000);
 
-    // 创建会话
-    let session = Arc::new(Session::new(session_id.clone(), uid, client_id.clone(), tx));
+    // 创建关闭信号
+    let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
 
-    // 注册会话
+    // 创建并注册会话
+    let session = Arc::new(Session::new(
+        session_id.clone(),
+        uid,
+        client_id.clone(),
+        tx,
+        shutdown_tx,
+    ));
     session_manager.register_session(session.clone());
 
     info!(
@@ -83,94 +232,24 @@ async fn handle_connection(
         session_id, uid, client_id
     );
 
+    // 创建连接处理器
+    let handler =
+        ConnectionHandler::new(session_id.clone(), session_manager.clone(), handler_chain);
+
     // 分离 socket 为发送者和接收者
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, receiver) = socket.split();
 
-    // 启动写入任务：从通道读取并写入 WebSocket
-    let writer_session = session.clone();
-    let writer_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            if sender.send(msg).await.is_err() {
-                break;
-            }
-        }
-        info!("写入任务结束: session_id={}", writer_session.id);
-    });
+    // 启动后台任务
+    let writer_task = handler.spawn_writer_task(rx, sender);
 
-    // 启动心跳检查任务
-    let hb_session_manager = session_manager.clone();
-    let hb_session_id = session_id.clone();
-    let heartbeat_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(10));
-        loop {
-            interval.tick().await;
+    // 处理消息循环
+    handler.run_message_loop(receiver, shutdown_rx).await;
 
-            // 检查会话是否存在
-            if let Some(s) = hb_session_manager.sessions.get(&hb_session_id) {
-                let last = s.last_seen();
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+    // 清理连接
+    handler.cleanup().await;
 
-                if now.saturating_sub(last) > HEARTBEAT_TIMEOUT {
-                    warn!("会话超时: session_id={}, last_seen={}", hb_session_id, last);
-                    hb_session_manager.cleanup_session(&hb_session_id);
-                    break;
-                }
-            } else {
-                // 会话已不存在
-                break;
-            }
-        }
-        info!("心跳任务结束: session_id={}", hb_session_id);
-    });
-
-    // 读取循环：处理接收到的消息
-    while let Some(Ok(msg)) = receiver.next().await {
-        match msg {
-            Message::Text(text) => {
-                // 更新会话活跃时间
-                session.touch();
-
-                // 处理文本消息
-                handler_chain
-                    .handle_message(&session, &session_id, uid, &client_id, &text)
-                    .await;
-            }
-            Message::Binary(_) => {
-                // 更新会话活跃时间
-                session.touch();
-                // TODO: 处理二进制消息
-            }
-            Message::Ping(payload) => {
-                session.touch();
-                // 通过 session.tx 发送 Pong（因为 sender 已经被移动到 writer_task）
-                if let Err(e) = session.send(Message::Pong(payload)) {
-                    warn!("发送 Pong 失败: {}", e);
-                    break;
-                }
-            }
-            Message::Pong(_) => {
-                session.touch();
-            }
-            Message::Close(_) => {
-                info!("客户端关闭连接: session_id={}", session_id);
-                break;
-            }
-        }
-    }
-
-    // 连接结束时的清理
-    info!("清理会话: session_id={}", session_id);
-    session_manager.cleanup_session(&session_id);
-
-    // 关闭通道，写入任务将结束
-    drop(session);
-
-    // 等待任务完成
+    // 等待后台任务完成
     let _ = writer_task.await;
-    let _ = heartbeat_task.await;
 
     info!("连接处理结束: session_id={}", session_id);
 }

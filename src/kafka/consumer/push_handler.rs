@@ -17,9 +17,7 @@ pub struct PushHandler {
 
 impl PushHandler {
     pub fn new(ws_state: Arc<WsState>) -> Self {
-        Self {
-            ws_state,
-        }
+        Self { ws_state }
     }
 
     /// 处理节点推送消息
@@ -44,7 +42,9 @@ impl PushHandler {
                     let ws_msg = axum::extract::ws::Message::Text(
                         serde_json::to_string(&msg).unwrap_or_default(),
                     );
-                    let sent = session_manager.send_to_device(user_id, &device_id, ws_msg);
+                    let sent = session_manager
+                        .send_to_device(user_id, &device_id, ws_msg)
+                        .await;
                     debug!(
                         "发送消息到设备 {} (用户 {}), 成功发送到 {} 个会话",
                         device_id, user_id, sent
@@ -77,7 +77,18 @@ impl PushHandler {
 impl KafkaMessageHandler for PushHandler {
     fn topics(&self) -> Vec<String> {
         // 动态 topic：push_topic + node_id
-        vec![format!("push_topic_{}", self.ws_state.session_manager.node_id())]
+        vec![format!(
+            "websocket_push_{}",
+            self.ws_state.session_manager.node_id()
+        )]
+    }
+
+    fn group_id(&self) -> String {
+        // 每个节点使用自己的 consumer group
+        format!(
+            "websocket_push_group_{}",
+            self.ws_state.session_manager.node_id()
+        )
     }
 
     async fn handle(&self, message: Message) {

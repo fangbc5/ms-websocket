@@ -2,12 +2,14 @@
 use fbc_starter::cache::{chat, get_cache_prefix, CacheHashKey, CacheKeyBuilder, CHAT, ValueType};
 use fbc_starter::ID_FIELD;
 
+use crate::types::RoomId;
+
 /// 房间元数据缓存键构建器
 pub struct RoomMetadataCacheKeyBuilder;
 
 impl RoomMetadataCacheKeyBuilder {
     /// 构建缓存 Hash 键
-    pub fn builder(room_id: i64, item_key: &str) -> CacheHashKey {
+    pub fn builder(room_id: RoomId, item_key: &str) -> CacheHashKey {
         RoomMetadataCacheKeyBuilder.hash_field_key(&item_key, &[&room_id])
     }
 }

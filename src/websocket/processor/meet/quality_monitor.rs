@@ -1,5 +1,5 @@
+use crate::enums::WsMsgTypeEnum;
 /// 通话质量监控处理器
-
 // use crate::model::vo::{network_quality_vo::NetworkQualityVO, screen_sharing_vo::ScreenSharingVO};
 use crate::model::ws_base_resp::WsBaseReq;
 use crate::types::{ClientId, SessionId, UserId};
@@ -28,7 +28,7 @@ struct ScreenSharingReq {
 }
 
 /// 通话质量监控处理器
-/// 
+///
 /// 功能：
 /// 1. 处理网络质量报告
 /// 2. 管理屏幕共享状态
@@ -43,10 +43,7 @@ impl QualityMonitorProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for QualityMonitorProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "network_report"
-            || req.r#type == "NETWORK_REPORT"
-            || req.r#type == "screen_sharing"
-            || req.r#type == "SCREEN_SHARING"
+        WsMsgTypeEnum::NetworkReport.eq(req.r#type) || WsMsgTypeEnum::ScreenSharing.eq(req.r#type)
     }
 
     async fn process(
@@ -57,11 +54,11 @@ impl MessageProcessor for QualityMonitorProcessor {
         _client_id: &ClientId,
         req: WsBaseReq,
     ) {
-        match req.r#type.as_str() {
-            "network_report" | "NETWORK_REPORT" => {
+        match WsMsgTypeEnum::from(req.r#type) {
+            Some(WsMsgTypeEnum::NetworkReport) => {
                 self.handle_network_report(uid, &req).await;
             }
-            "screen_sharing" | "SCREEN_SHARING" => {
+            Some(WsMsgTypeEnum::ScreenSharing) => {
                 self.handle_screen_sharing(uid, &req).await;
             }
             _ => {
@@ -128,4 +125,3 @@ impl Default for QualityMonitorProcessor {
         Self::new()
     }
 }
-

@@ -1,10 +1,12 @@
+use crate::types::{RoomId, UserId};
+
 /// 用户加入房间 VO
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UserJoinRoomVO {
     /// 用户 ID
-    pub uid: String,
+    pub uid: UserId,
     /// 房间 ID
-    pub room_id: String,
+    pub room_id: RoomId,
     /// 用户名称
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -17,7 +19,7 @@ pub struct UserJoinRoomVO {
 
 impl UserJoinRoomVO {
     /// 创建新的用户加入房间消息（自动设置当前时间戳）
-    pub fn new(uid: u64, room_id: u64) -> Self {
+    pub fn new(uid: UserId, room_id: RoomId) -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -25,8 +27,8 @@ impl UserJoinRoomVO {
             .as_millis() as i64;
 
         Self {
-            uid: uid.to_string(),
-            room_id: room_id.to_string(),
+            uid,
+            room_id,
             name: None,
             avatar: None,
             timestamp,

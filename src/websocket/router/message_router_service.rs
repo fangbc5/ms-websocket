@@ -33,7 +33,16 @@ impl MessageRouterService {
             warn!("路由推送消息的用户列表为空，跳过处理");
             return;
         }
-
+        // 2. 推送消息
+        if let Err(e) = self
+            .ws_state
+            .services
+            .push_service
+            .send_push_msg(dto.ws_base_msg, dto.uid_list, dto.uid)
+            .await
+        {
+            error!("推送消息失败: {}", e);
+        }
     }
 }
 
@@ -43,7 +52,11 @@ impl KafkaMessageHandler for MessageRouterService {
     ///
     /// 对应 Java 中的 `MqConstant.PUSH_TOPIC`
     fn topics(&self) -> Vec<String> {
-        vec!["push_topic".to_string()]
+        vec!["websocket_push".to_string()]
+    }
+
+    fn group_id(&self) -> String {
+        "websocket_push_group".to_string()
     }
 
     /// 处理消息

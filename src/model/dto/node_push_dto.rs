@@ -1,4 +1,4 @@
-use crate::model::WsBaseResp;
+use crate::{model::WsBaseResp, types::UserId};
 
 /// 指纹级别的精确路由 DTO
 ///
@@ -13,5 +13,5 @@ pub struct NodePushDTO {
     /// 消息唯一 hashId
     pub hash_id: u64,
     /// 操作人 uid
-    pub uid: u64,
+    pub uid: UserId,
 }

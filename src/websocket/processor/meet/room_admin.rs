@@ -1,3 +1,4 @@
+use crate::enums::WsMsgTypeEnum;
 /// 房间管理处理器
 
 use crate::model::ws_base_resp::WsBaseReq;
@@ -52,12 +53,7 @@ impl RoomAdminProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for RoomAdminProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "close_room"
-            || req.r#type == "CLOSE_ROOM"
-            || req.r#type == "kick_user"
-            || req.r#type == "KICK_USER"
-            || req.r#type == "media_mute_all"
-            || req.r#type == "MEDIA_MUTE_ALL"
+        WsMsgTypeEnum::CloseRoom.eq(req.r#type) || WsMsgTypeEnum::KickUser.eq(req.r#type) || WsMsgTypeEnum::MediaMuteAll.eq(req.r#type)
     }
 
     async fn process(
@@ -68,19 +64,11 @@ impl MessageProcessor for RoomAdminProcessor {
         _client_id: &ClientId,
         req: WsBaseReq,
     ) {
-        match req.r#type.as_str() {
-            "close_room" | "CLOSE_ROOM" => {
-                self.handle_close_room(uid, &req).await;
-            }
-            "kick_user" | "KICK_USER" => {
-                self.handle_kick_user(uid, &req).await;
-            }
-            "media_mute_all" | "MEDIA_MUTE_ALL" => {
-                self.handle_mute_all(uid, &req).await;
-            }
-            _ => {
-                tracing::warn!("未知的房间管理消息类型: {}", req.r#type);
-            }
+        match WsMsgTypeEnum::from(req.r#type) {
+            Some(WsMsgTypeEnum::CloseRoom) => self.handle_close_room(uid, &req).await,
+            Some(WsMsgTypeEnum::KickUser) => self.handle_kick_user(uid, &req).await,
+            Some(WsMsgTypeEnum::MediaMuteAll) => self.handle_mute_all(uid, &req).await,
+            _ => tracing::warn!("未知的房间管理消息类型: {}", req.r#type),
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::enums::WsMsgTypeEnum;
 /// 媒体控制处理器
 
 use crate::model::vo::media_control_vo::MediaControlVO;
@@ -25,12 +26,7 @@ impl MediaControlProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for MediaControlProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "media_mute_audio"
-            || req.r#type == "MEDIA_MUTE_AUDIO"
-            || req.r#type == "media_mute_video"
-            || req.r#type == "MEDIA_MUTE_VIDEO"
-            || req.r#type == "media_mute_all"
-            || req.r#type == "MEDIA_MUTE_ALL"
+        WsMsgTypeEnum::MediaMuteAudio.eq(req.r#type)
     }
 
     async fn process(

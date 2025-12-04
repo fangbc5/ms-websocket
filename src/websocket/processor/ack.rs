@@ -1,3 +1,4 @@
+use crate::enums::WsMsgTypeEnum;
 /// 消息确认处理器
 use crate::model::dto::AckMessageDto;
 use crate::model::ws_base_resp::WsBaseReq;
@@ -25,7 +26,7 @@ impl AckProcessor {
 #[async_trait::async_trait]
 impl MessageProcessor for AckProcessor {
     fn supports(&self, req: &WsBaseReq) -> bool {
-        req.r#type == "ack" || req.r#type == "ACK"
+        WsMsgTypeEnum::Ack.eq(req.r#type)
     }
 
     async fn process(

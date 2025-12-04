@@ -9,8 +9,16 @@ use dashmap::DashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
-use tracing::info;
+use tokio::task::JoinHandle;
+use tracing::{info, warn};
+
+/// 心跳超时时间（秒）
+const HEARTBEAT_TIMEOUT: u64 = 30;
+
+/// 心跳检查间隔（秒）
+const HEARTBEAT_CHECK_INTERVAL: u64 = 10;
 
 /// WebSocket 会话
 #[derive(Debug)]
@@ -21,8 +29,10 @@ pub struct Session {
     pub uid: UserId,
     /// 客户端 ID（设备指纹）
     pub client_id: ClientId,
-    /// 发送通道
-    pub tx: mpsc::UnboundedSender<axum::extract::ws::Message>,
+    /// 发送通道（有界通道，容量 1000）
+    pub tx: mpsc::Sender<axum::extract::ws::Message>,
+    /// 关闭通道（有界通道，容量 1）
+    pub shutdown_tx: mpsc::Sender<()>,
     /// 最后活跃时间（Unix 时间戳，秒）
     last_seen: AtomicU64,
 }
@@ -33,13 +43,15 @@ impl Session {
         id: SessionId,
         uid: UserId,
         client_id: ClientId,
-        tx: mpsc::UnboundedSender<axum::extract::ws::Message>,
+        tx: mpsc::Sender<axum::extract::ws::Message>,
+        shutdown_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
             id,
             uid,
             client_id,
             tx,
+            shutdown_tx,
             last_seen: AtomicU64::new(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -63,16 +75,25 @@ impl Session {
         self.last_seen.load(Ordering::Relaxed)
     }
 
-    /// 发送消息
-    pub fn send(
+    /// 发送消息（异步方法，如果通道满了会等待）
+    pub async fn send(
         &self,
         msg: axum::extract::ws::Message,
     ) -> Result<(), mpsc::error::SendError<axum::extract::ws::Message>> {
-        self.tx.send(msg)
+        self.tx.send(msg).await
+    }
+
+    /// 尝试发送消息（同步方法，如果通道满了立即返回错误）
+    pub fn try_send(
+        &self,
+        msg: axum::extract::ws::Message,
+    ) -> Result<(), mpsc::error::TrySendError<axum::extract::ws::Message>> {
+        self.tx.try_send(msg)
     }
 }
 
 /// 会话管理器
+#[derive(Debug, Clone)]
 pub struct SessionManager {
     /// 会话 ID → 会话映射
     pub(crate) sessions: Arc<DashMap<SessionId, Arc<Session>>>,
@@ -93,14 +114,51 @@ impl SessionManager {
     pub fn new() -> Self {
         let node_id = std::env::var("NODE_ID").unwrap_or_else(|_| "1".to_string());
 
-        Self {
+        let manager = Self {
             sessions: Arc::new(DashMap::new()),
             user_device_sessions: Arc::new(DashMap::new()),
             session_user: Arc::new(DashMap::new()),
             session_client: Arc::new(DashMap::new()),
             accepting_new_connections: Arc::new(AtomicBool::new(true)),
             node_id,
-        }
+        };
+
+        // 启动心跳检查任务
+        manager.start_heartbeat_check_task();
+
+        manager
+    }
+
+    /// 启动心跳检查任务
+    fn start_heartbeat_check_task(&self) -> JoinHandle<()> {
+        let sessions = self.sessions.clone();
+        let manager = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_CHECK_INTERVAL));
+            loop {
+                interval.tick().await;
+
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                // 先收集超时的会话 ID，避免在迭代时修改 sessions
+                let mut expired_sessions = Vec::new();
+                for entry in sessions.iter() {
+                    let session = entry.value();
+                    let last_seen = session.last_seen();
+                    if now.saturating_sub(last_seen) > HEARTBEAT_TIMEOUT {
+                        expired_sessions.push(entry.key().clone());
+                    }
+                }
+
+                // 统一清理超时的会话
+                for session_id in expired_sessions {
+                    warn!("会话超时: session_id={}", session_id);
+                    manager.cleanup_session(&session_id);
+                }
+            }
+        })
     }
 
     /// 设置是否接受新连接
@@ -219,6 +277,7 @@ impl SessionManager {
 
     /// 清理会话
     pub fn cleanup_session(&self, session_id: &SessionId) {
+        // 直接 remove，避免竞态条件
         let Some((_, session)) = self.sessions.remove(session_id) else {
             return;
         };
@@ -226,27 +285,66 @@ impl SessionManager {
         let uid = session.uid;
         let client_id = session.client_id.clone();
 
+        // 发送 Close 消息，通知 writer_task 退出
+        // 注意：即使通道满了或 writer_task 已退出，try_send 也不会阻塞
+        if let Err(e) = session.try_send(axum::extract::ws::Message::Close(None)) {
+            warn!("发送关闭写任务信号失败: session_id={}, error={}", session_id, e);
+        } else {
+            info!("发送关闭写任务信号: session_id={}", session_id);
+        }
+
+        // 发送关闭信号，通知主循环退出
+        // 使用 try_send 避免阻塞，如果通道满了就记录警告
+        if let Err(e) = session.shutdown_tx.try_send(()) {
+            warn!("发送关闭后台循环信号失败: session_id={}, error={}", session_id, e);
+        } else {
+            info!("发送关闭后台循环信号: session_id={}", session_id);
+        }
+
         // 从反向索引中移除
         self.session_user.remove(session_id);
         self.session_client.remove(session_id);
 
-        // 从用户→设备→会话映射中移除
-        if let Some(device_map) = self.user_device_sessions.get_mut(&uid) {
-            if let Some(mut sessions) = device_map.get_mut(&client_id) {
-                sessions.remove(session_id);
-                if sessions.is_empty() {
-                    drop(sessions);
-                    device_map.remove(&client_id);
+        // 从用户→设备→会话映射中移除，并统计剩余会话数
+        // 注意：DashMap 使用分片锁，每个 shard 内部有 RwLock
+        // 必须先释放 get_mut 的 RefMut，才能调用 remove，避免死锁
+        let (should_remove_device, remaining_sessions) = {
+            let mut count = 0usize;
+            let mut should_remove = false;
+            if let Some(device_map) = self.user_device_sessions.get(&uid) {
+                // 先检查是否需要移除设备（使用读锁）
+                if let Some(sessions) = device_map.get(&client_id) {
+                    if sessions.len() == 1 && sessions.contains(session_id) {
+                        should_remove = true;
+                    }
+                }
+
+                // 移除会话（get_mut 会获取写锁，作用域结束后自动释放）
+                if let Some(mut sessions) = device_map.get_mut(&client_id) {
+                    sessions.remove(session_id);
+                }
+                // 这里 get_mut 的 RefMut 已经被 drop，写锁已释放
+
+                // 统计剩余会话数（使用读锁）
+                for entry in device_map.iter() {
+                    count += entry.value().len();
                 }
             }
-            if device_map.is_empty() {
-                drop(device_map);
-                self.user_device_sessions.remove(&uid);
+            (should_remove, count)
+        };
+
+        // 移除设备（必须在 get_mut 的 RefMut 释放后）
+        if should_remove_device {
+            if let Some(device_map) = self.user_device_sessions.get_mut(&uid) {
+                device_map.remove(&client_id);
+                if device_map.is_empty() {
+                    drop(device_map); // 显式释放写锁
+                    self.user_device_sessions.remove(&uid);
+                }
             }
         }
 
         // TODO: 如果是最后一个会话，清理路由和在线状态
-        let remaining_sessions = self.get_user_sessions(uid).len();
         if remaining_sessions == 0 {
             // TODO: 从 Nacos 路由中移除
             // TODO: 同步离线状态到 Redis
@@ -265,7 +363,7 @@ impl SessionManager {
     /// - `uid`: 用户 ID
     /// - `client_id`: 客户端 ID
     /// - `msg`: 消息
-    pub fn send_to_device(
+    pub async fn send_to_device(
         &self,
         uid: UserId,
         client_id: &ClientId,
@@ -282,7 +380,7 @@ impl SessionManager {
         let mut sent = 0;
         for session_id in sessions.iter() {
             if let Some(session) = self.sessions.get(session_id) {
-                if session.send(msg.clone()).is_ok() {
+                if session.send(msg.clone()).await.is_ok() {
                     sent += 1;
                 }
             }
@@ -291,10 +389,10 @@ impl SessionManager {
     }
 
     /// 发送消息到用户的所有设备
-    pub fn send_to_user(&self, uid: UserId, msg: axum::extract::ws::Message) -> usize {
+    pub async fn send_to_user(&self, uid: UserId, msg: axum::extract::ws::Message) -> usize {
         let mut sent = 0;
         for session in self.get_user_sessions(uid) {
-            if session.send(msg.clone()).is_ok() {
+            if session.send(msg.clone()).await.is_ok() {
                 sent += 1;
             }
         }
