@@ -108,7 +108,7 @@ impl PushService {
         let active_nodes = self.get_all_active_nodes().await?;
 
         // 4. 使用 HGETALL 获取所有设备-节点映射（如果数据量大，可以考虑使用 HSCAN）
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let items: HashMap<String, String> = conn.hgetall(&device_node_map.key).await?;
 
         for (field, node_id) in items {
@@ -178,11 +178,14 @@ impl PushService {
 
     /// 本地节点直接推送
     async fn local_push(&self, uid_list: Vec<u64>, msg: &WsBaseResp) -> anyhow::Result<()> {
-        let ws_msg =
-            axum::extract::ws::Message::Text(serde_json::to_string(msg).unwrap_or_else(|e| {
-                error!("序列化 WebSocket 消息失败: {}", e);
-                String::new()
-            }));
+        let ws_msg = axum::extract::ws::Message::Text(
+            serde_json::to_string(msg)
+                .unwrap_or_else(|e| {
+                    error!("序列化 WebSocket 消息失败: {}", e);
+                    String::new()
+                })
+                .into(),
+        );
 
         // 按设备数动态调整并行度，最大32线程并发
         let parallelism = std::cmp::min(uid_list.len(), 32);

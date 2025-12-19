@@ -10,13 +10,13 @@ mod state;
 mod types;
 pub mod websocket;
 
-use fbc_starter::Server;
+use fbc_starter::{AppResult, Server};
 use std::sync::Arc;
 
 use crate::state::WsState;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> AppResult<()> {
     Server::run(|builder| {
         // 获取配置和状态
         let app_state = builder.app_state().clone();
@@ -44,10 +44,13 @@ async fn main() -> anyhow::Result<()> {
         // 创建路由
         let routes = routes::create_routes(ws_state.clone());
 
-        let _kafka_handlers = kafka::init_handlers(ws_state.clone());
+        // 初始化并注册 Kafka handlers
+        let kafka_handlers = kafka::init_handlers(ws_state.clone());
 
-        // 设置路由
-        builder.http_router(routes)
+        // 设置路由和 Kafka handlers
+        builder
+            .with_kafka_handlers(kafka_handlers)
+            .http_router(routes)
     })
     .await
 }

@@ -5,11 +5,15 @@ use redis::AsyncCommands;
 use tracing::{info, warn};
 
 use crate::{
-    cache::{UserRoomsCacheKeyBuilder, VideoRoomsCacheKeyBuilder}, enums::ws_req_type::WsMsgTypeEnum, model::{
+    cache::{UserRoomsCacheKeyBuilder, VideoRoomsCacheKeyBuilder},
+    enums::ws_req_type::WsMsgTypeEnum,
+    model::{
         WsBaseResp,
         entity::Room,
         vo::{user_join_room_vo::UserJoinRoomVO, video_signal_vo::VideoSignalVO},
-    }, service::{PushService, RoomMetadataService}, types::{RoomId, UserId}
+    },
+    service::{PushService, RoomMetadataService},
+    types::{RoomId, UserId},
 };
 
 /// 视频聊天服务
@@ -63,7 +67,7 @@ impl VideoChatService {
         {
             // 添加用户到房间成员列表
             let key = VideoRoomsCacheKeyBuilder::build(room_id);
-            let mut conn = self.app_state.redis()?;
+            let mut conn = self.app_state.redis().await?;
             let _: () = conn.sadd(&key.key, &uid.to_string()).await?;
 
             // 添加房间到用户房间列表
@@ -103,14 +107,14 @@ impl VideoChatService {
         // 2. 从用户房间列表中移除
         {
             let key = UserRoomsCacheKeyBuilder::build(uid);
-            let mut conn = self.app_state.redis()?;
+            let mut conn = self.app_state.redis().await?;
             let _: () = conn.srem(&key.key, &room_id.to_string()).await?;
         }
 
         // 3. 从房间用户列表中移除
         {
             let key = VideoRoomsCacheKeyBuilder::build(room_id);
-            let mut conn = self.app_state.redis()?;
+            let mut conn = self.app_state.redis().await?;
             let _: () = conn.srem(&key.key, &uid.to_string()).await?;
         }
 
@@ -190,7 +194,11 @@ impl VideoChatService {
     }
 
     /// 创建群视频房间
-    pub async fn create_group_room(&self, room_id: RoomId, creator_uid: UserId) -> anyhow::Result<RoomId> {
+    pub async fn create_group_room(
+        &self,
+        room_id: RoomId,
+        creator_uid: UserId,
+    ) -> anyhow::Result<RoomId> {
         let room = self.get_room_metadata(room_id).await?;
         if room.is_none() {
             return Err(anyhow::anyhow!("房间不存在"));
@@ -199,12 +207,12 @@ impl VideoChatService {
         // 初始化房间
         {
             let key = VideoRoomsCacheKeyBuilder::build(room_id);
-            let mut conn = self.app_state.redis()?;
+            let mut conn = self.app_state.redis().await?;
             let _: () = conn.sadd(&key.key, &creator_uid.to_string()).await?;
         }
         {
             let key = UserRoomsCacheKeyBuilder::build(creator_uid);
-            let mut conn = self.app_state.redis()?;
+            let mut conn = self.app_state.redis().await?;
             let _: () = conn.sadd(&key.key, &room_id.to_string()).await?;
         }
 
@@ -226,7 +234,7 @@ impl VideoChatService {
         {
             for uid in &members {
                 let key = UserRoomsCacheKeyBuilder::build(*uid);
-                let mut conn = self.app_state.redis()?;
+                let mut conn = self.app_state.redis().await?;
                 let _: () = conn.srem(&key.key, &room_id.to_string()).await?;
             }
         }
@@ -234,7 +242,7 @@ impl VideoChatService {
         // 3. 删除房间成员集合
         {
             let key = VideoRoomsCacheKeyBuilder::build(room_id);
-            let mut conn = self.app_state.redis()?;
+            let mut conn = self.app_state.redis().await?;
             let _: () = conn.del(&key.key).await?;
         }
 
@@ -244,18 +252,24 @@ impl VideoChatService {
     /// 获取用户加入的所有视频房间
     pub async fn get_user_rooms(&self, uid: UserId) -> anyhow::Result<HashSet<RoomId>> {
         let key = UserRoomsCacheKeyBuilder::build(uid);
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let members: Vec<String> = conn.smembers(&key.key).await?;
-        let rooms: HashSet<RoomId> = members.into_iter().filter_map(|s| s.parse::<RoomId>().ok()).collect();
+        let rooms: HashSet<RoomId> = members
+            .into_iter()
+            .filter_map(|s| s.parse::<RoomId>().ok())
+            .collect();
         Ok(rooms)
     }
 
     /// 获取视频房间内所有成员
     pub async fn get_room_members(&self, room_id: RoomId) -> anyhow::Result<Vec<UserId>> {
         let key = VideoRoomsCacheKeyBuilder::build(room_id);
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let members: Vec<String> = conn.smembers(&key.key).await?;
-        let mut uids: Vec<UserId> = members.into_iter().filter_map(|s| s.parse::<UserId>().ok()).collect();
+        let mut uids: Vec<UserId> = members
+            .into_iter()
+            .filter_map(|s| s.parse::<UserId>().ok())
+            .collect();
         uids.sort();
         uids.dedup();
         Ok(uids)
@@ -264,7 +278,7 @@ impl VideoChatService {
     /// 检查用户是否在房间中
     pub async fn is_user_in_room(&self, uid: UserId, room_id: RoomId) -> anyhow::Result<bool> {
         let key = VideoRoomsCacheKeyBuilder::build(room_id);
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         Ok(conn.sismember(&key.key, &uid.to_string()).await?)
     }
 

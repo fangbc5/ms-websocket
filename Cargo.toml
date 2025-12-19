@@ -1,7 +1,9 @@
 [package]
-name = "ws-server"
-version = "0.1.0"
-edition = "2024"
+name = "ms-websocket"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 fbc-starter = { path = "../fbc-starter", features = ["redis", "nacos", "balance", "producer", "consumer"] }
@@ -15,7 +17,7 @@ dashmap = { workspace = true }
 bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 anyhow = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }

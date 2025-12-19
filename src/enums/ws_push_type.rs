@@ -15,11 +15,13 @@ pub enum WsPushTypeEnum {
 
 impl WsPushTypeEnum {
     /// 获取类型值
+    #[allow(dead_code)]
     pub fn as_i32(&self) -> i32 {
         *self as i32
     }
 
     /// 获取描述
+    #[allow(dead_code)]
     pub fn desc(&self) -> &'static str {
         match self {
             WsPushTypeEnum::User => "个人",

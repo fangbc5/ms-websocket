@@ -27,7 +27,7 @@ impl RoomMetadataService {
 
     /// 打开房间
     pub async fn open_room(&self, room_id: RoomId) -> anyhow::Result<()> {
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = CloseRoomCacheKeyBuilder::builder(room_id);
         if let Some(expire) = key.expire {
             let _: () = conn.set_ex(&key.key, "false", expire.as_secs()).await?;
@@ -39,7 +39,7 @@ impl RoomMetadataService {
 
     /// 检查房间是否已关闭
     pub async fn is_room_closed(&self, room_id: RoomId) -> anyhow::Result<bool> {
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = CloseRoomCacheKeyBuilder::builder(room_id);
         let result: Option<String> = conn.get(&key.key).await?;
         match result {
@@ -54,7 +54,7 @@ impl RoomMetadataService {
         self.set_room_metadata(room_id, "startTime", None::<String>)
             .await?;
         // 删除关闭房间键
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = CloseRoomCacheKeyBuilder::builder(room_id);
         let _: () = conn.del(&key.key).await?;
         Ok(())
@@ -67,7 +67,7 @@ impl RoomMetadataService {
         field: &str,
         value: Option<T>,
     ) -> anyhow::Result<()> {
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = RoomMetadataCacheKeyBuilder::builder(room_id, field);
         let hash_field = key.field.as_deref().unwrap_or("");
         if let Some(val) = value {
@@ -89,7 +89,7 @@ impl RoomMetadataService {
         room_id: RoomId,
         field: &str,
     ) -> anyhow::Result<Option<T>> {
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = RoomMetadataCacheKeyBuilder::builder(room_id, field);
         let hash_field = key.field.as_deref().unwrap_or("");
         let result: Option<String> = conn.hget(&key.key, hash_field).await?;
@@ -105,7 +105,11 @@ impl RoomMetadataService {
     }
 
     /// 设置房间创建者
-    pub async fn set_room_creator(&self, room_id: RoomId, creator_uid: UserId) -> anyhow::Result<()> {
+    pub async fn set_room_creator(
+        &self,
+        room_id: RoomId,
+        creator_uid: UserId,
+    ) -> anyhow::Result<()> {
         self.set_room_metadata(room_id, "creator", Some(creator_uid))
             .await
     }
@@ -124,7 +128,7 @@ impl RoomMetadataService {
 
     /// 添加房间管理员
     pub async fn add_room_admin(&self, room_id: RoomId, admin_uid: UserId) -> anyhow::Result<()> {
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = RoomAdminMetadataCacheKeyBuilder::builder(room_id);
         let _: () = conn.sadd(&key.key, admin_uid.to_string()).await?;
         // 设置过期时间
@@ -140,7 +144,11 @@ impl RoomMetadataService {
     }
 
     /// 设置房间媒体类型
-    pub async fn set_room_medium_type(&self, room_id: RoomId, is_video: bool) -> anyhow::Result<()> {
+    pub async fn set_room_medium_type(
+        &self,
+        room_id: RoomId,
+        is_video: bool,
+    ) -> anyhow::Result<()> {
         self.set_room_metadata(room_id, "mediumType", Some(is_video))
             .await
     }
@@ -171,11 +179,13 @@ impl RoomMetadataService {
         &self,
         room_id: RoomId,
     ) -> anyhow::Result<std::collections::HashSet<UserId>> {
-        let mut conn = self.app_state.redis()?;
+        let mut conn = self.app_state.redis().await?;
         let key = RoomAdminMetadataCacheKeyBuilder::builder(room_id);
         let members: Vec<String> = conn.smembers(&key.key).await?;
-        let admins: std::collections::HashSet<UserId> =
-            members.into_iter().filter_map(|s| s.parse::<UserId>().ok()).collect();
+        let admins: std::collections::HashSet<UserId> = members
+            .into_iter()
+            .filter_map(|s| s.parse::<UserId>().ok())
+            .collect();
         Ok(admins)
     }
 

@@ -21,6 +21,7 @@ impl RouterCacheKeyBuilder {
     ///
     /// # 参数
     /// - `node_id`: 节点 ID
+    #[allow(dead_code)]
     pub fn build_node_devices(node_id: &str) -> CacheKey {
         NodeDevices.key(&[&node_id])
     }

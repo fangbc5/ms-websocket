@@ -168,7 +168,7 @@ pub async fn ws_route(
 ) -> Response {
     // 检查是否接受新连接
     if !state.session_manager.is_accepting_new_connections() {
-        return ws.on_upgrade(|socket| async move {
+        return ws.on_upgrade(|mut socket| async move {
             let _ = socket.close().await;
         });
     }
@@ -183,7 +183,7 @@ pub async fn ws_route(
     let uid: UserId = params.get("uid").and_then(|s| s.parse().ok()).unwrap_or(0);
 
     if uid == 0 {
-        return ws.on_upgrade(|socket| async move {
+        return ws.on_upgrade(|mut socket| async move {
             let _ = socket.close().await;
         });
     }

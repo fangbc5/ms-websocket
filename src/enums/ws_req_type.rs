@@ -80,6 +80,7 @@ impl WsMsgTypeEnum {
     }
 
     /// 获取描述
+    #[allow(dead_code)]
     pub fn desc(&self) -> &'static str {
         match self {
             WsMsgTypeEnum::Login => "请求登录二维码",

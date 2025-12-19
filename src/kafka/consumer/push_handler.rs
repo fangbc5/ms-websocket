@@ -40,7 +40,7 @@ impl PushHandler {
                 async move {
                     // 使用 SessionManager 发送消息到设备
                     let ws_msg = axum::extract::ws::Message::Text(
-                        serde_json::to_string(&msg).unwrap_or_default(),
+                        serde_json::to_string(&msg).unwrap_or_default().into(),
                     );
                     let sent = session_manager
                         .send_to_device(user_id, &device_id, ws_msg)
