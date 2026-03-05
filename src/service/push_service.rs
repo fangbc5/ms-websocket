@@ -168,8 +168,13 @@ impl PushService {
                 instance
                     .metadata
                     .as_ref()
-                    .and_then(|meta| meta.get("nodeId"))
-                    .map(|s| s.to_string())
+                    .and_then(|meta| {
+                        // 尝试获取 nodeid（小写，环境变量转换后的键名）
+                        // 或 nodeId（大小写混合，配置文件中的键名）
+                        meta.get("nodeid")
+                            .or_else(|| meta.get("nodeId"))
+                            .map(|s| s.to_string())
+                    })
             })
             .collect();
 
@@ -244,7 +249,7 @@ impl PushService {
 
         // 发送到 Kafka
         if let Ok(producer) = self.app_state.message_producer() {
-            let topic = format!("push_topic_{}", node_id);
+            let topic = format!("websocket_push_{}", node_id);
             let message = fbc_starter::Message::new(
                 topic.clone(),
                 cuid.to_string(),

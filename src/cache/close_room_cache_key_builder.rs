@@ -1,8 +1,8 @@
+/// 关闭房间标记缓存键
+use fbc_starter::cache::{chat, get_cache_prefix, CHAT, CacheKey, CacheKeyBuilder, ValueType};
 use fbc_starter::ID_FIELD;
-/// 关闭房间参数 KEY
-use fbc_starter::cache::{CHAT, CacheKey, CacheKeyBuilder, ValueType, chat, get_cache_prefix};
-use std::time::Duration;
 
+use crate::cache::constants::EXPIRE_CLOSE_ROOM;
 use crate::types::RoomId;
 
 /// 关闭房间缓存键构建器
@@ -10,7 +10,7 @@ pub struct CloseRoomCacheKeyBuilder;
 
 impl CloseRoomCacheKeyBuilder {
     /// 构建缓存键
-    pub fn builder(room_id: RoomId) -> CacheKey {
+    pub fn build(room_id: RoomId) -> CacheKey {
         CloseRoomCacheKeyBuilder.key(&[&room_id])
     }
 }
@@ -40,7 +40,7 @@ impl CacheKeyBuilder for CloseRoomCacheKeyBuilder {
         ValueType::String
     }
 
-    fn get_expire(&self) -> Option<Duration> {
-        Some(Duration::from_secs(5 * 60 * 60)) // 5 小时
+    fn get_expire(&self) -> Option<std::time::Duration> {
+        Some(EXPIRE_CLOSE_ROOM)
     }
 }

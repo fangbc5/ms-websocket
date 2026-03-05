@@ -1,38 +1,36 @@
 /// 路由模块缓存键构建器
+///
+/// 设备-节点映射存于 Redis Hash，key 由本模块构建，field 由调用方指定（如 uid:client_id）。
 use fbc_starter::cache::{CacheHashKey, CacheKey, CacheKeyBuilder, ValueType};
-use std::time::Duration;
 
 use crate::types::ClientId;
+
+/// 路由相关 key 的前缀（项目/环境）
+const ROUTER_KEY_PREFIX: &str = "fenghuo";
 
 /// 路由缓存键构建器
 pub struct RouterCacheKeyBuilder;
 
 impl RouterCacheKeyBuilder {
-    /// 构建设备-节点映射的缓存 Hash 键
-    ///
-    /// # 参数
-    /// - `client_id`: 客户端 ID（作为 hash field）
+    /// 构建设备-节点映射的 Redis Hash 键（调用方使用返回的 key，field 自拟如 `uid:client_id`）
     pub fn build_device_node_map(client_id: ClientId) -> CacheHashKey {
         let field_name = "device-node-mapping";
         DeviceNodeMapping.hash_field_key(&client_id, &[&field_name as &dyn ToString])
     }
 
     /// 构建节点设备集合的缓存键
-    ///
-    /// # 参数
-    /// - `node_id`: 节点 ID
     #[allow(dead_code)]
     pub fn build_node_devices(node_id: &str) -> CacheKey {
         NodeDevices.key(&[&node_id])
     }
 }
 
-/// 设备-节点映射表
+/// 设备-节点映射表（Hash，永不过期）
 pub struct DeviceNodeMapping;
 
 impl CacheKeyBuilder for DeviceNodeMapping {
     fn get_prefix(&self) -> Option<&str> {
-        Some("luohuo")
+        Some(ROUTER_KEY_PREFIX)
     }
 
     fn get_tenant(&self) -> Option<&str> {
@@ -46,18 +44,14 @@ impl CacheKeyBuilder for DeviceNodeMapping {
     fn get_value_type(&self) -> ValueType {
         ValueType::String
     }
-
-    fn get_expire(&self) -> Option<Duration> {
-        None // -1 表示永不过期
-    }
 }
 
-/// 节点设备集合
+/// 节点设备集合（永不过期）
 pub struct NodeDevices;
 
 impl CacheKeyBuilder for NodeDevices {
     fn get_prefix(&self) -> Option<&str> {
-        Some("luohuo")
+        Some(ROUTER_KEY_PREFIX)
     }
 
     fn get_tenant(&self) -> Option<&str> {
@@ -74,9 +68,5 @@ impl CacheKeyBuilder for NodeDevices {
 
     fn get_value_type(&self) -> ValueType {
         ValueType::String
-    }
-
-    fn get_expire(&self) -> Option<Duration> {
-        None // -1 表示永不过期
     }
 }

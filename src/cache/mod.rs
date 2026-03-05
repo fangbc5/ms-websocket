@@ -1,5 +1,6 @@
 /// 缓存键构建器模块
 pub mod close_room_cache_key_builder;
+pub mod constants;
 pub mod room_admin_metadata_cache_key_builder;
 pub mod room_metadata_cache_key_builder;
 pub mod router_cache_key_builder;

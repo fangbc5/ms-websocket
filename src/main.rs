@@ -22,7 +22,9 @@ async fn main() -> AppResult<()> {
         let app_state = builder.app_state().clone();
 
         // 创建会话管理器
-        let session_manager = Arc::new(websocket::SessionManager::new());
+        let mut session_manager = websocket::SessionManager::new();
+        session_manager.set_app_state(app_state.clone());
+        let session_manager = Arc::new(session_manager);
 
         // 初始化所有服务
         let services = Arc::new(

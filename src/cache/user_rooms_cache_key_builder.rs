@@ -1,7 +1,7 @@
-/// 用户房间缓存参数 KEY
-use fbc_starter::cache::{CacheKey, CacheKeyBuilder, VIDEO_CALL, get_cache_prefix};
-use std::time::Duration;
+/// 用户房间列表缓存键
+use fbc_starter::cache::{get_cache_prefix, CacheKey, CacheKeyBuilder, VIDEO_CALL};
 
+use crate::cache::constants::EXPIRE_VIDEO_USER_ROOMS;
 use crate::types::UserId;
 
 /// 用户房间缓存键构建器
@@ -31,7 +31,7 @@ impl CacheKeyBuilder for UserRoomsCacheKeyBuilder {
         None
     }
 
-    fn get_expire(&self) -> Option<Duration> {
-        Some(Duration::from_secs(15 * 60)) // 15 分钟
+    fn get_expire(&self) -> Option<std::time::Duration> {
+        Some(EXPIRE_VIDEO_USER_ROOMS)
     }
 }

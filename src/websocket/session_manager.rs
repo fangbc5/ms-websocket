@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 /// 心跳超时时间（秒）
 const HEARTBEAT_TIMEOUT: u64 = 30;
@@ -93,7 +93,7 @@ impl Session {
 }
 
 /// 会话管理器
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SessionManager {
     /// 会话 ID → 会话映射
     pub(crate) sessions: Arc<DashMap<SessionId, Arc<Session>>>,
@@ -107,6 +107,8 @@ pub struct SessionManager {
     accepting_new_connections: Arc<AtomicBool>,
     /// 节点 ID（从环境变量获取）
     node_id: String,
+    /// AppState 引用（用于访问 Redis）
+    app_state: Option<Arc<fbc_starter::AppState>>,
 }
 
 impl SessionManager {
@@ -121,12 +123,18 @@ impl SessionManager {
             session_client: Arc::new(DashMap::new()),
             accepting_new_connections: Arc::new(AtomicBool::new(true)),
             node_id,
+            app_state: None,
         };
 
         // 启动心跳检查任务
         manager.start_heartbeat_check_task();
 
         manager
+    }
+
+    /// 设置 AppState（在初始化后调用）
+    pub fn set_app_state(&mut self, app_state: Arc<fbc_starter::AppState>) {
+        self.app_state = Some(app_state);
     }
 
     /// 启动心跳检查任务
@@ -244,10 +252,20 @@ impl SessionManager {
         self.sessions.insert(session_id.clone(), session);
 
         if is_first_device {
-            // TODO: 注册到 Nacos 路由
-            // TODO: 同步在线状态到 Redis
+            // 注册设备到 Redis 路由表
+            let manager = self.clone();
+            let node_id = self.node_id.clone();
+            let uid_clone = uid;
+            let client_id_clone = client_id.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) = manager.register_device_to_redis(uid_clone, &client_id_clone, &node_id).await {
+                    error!("注册设备到 Redis 失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
+                }
+            });
+
             info!(
-                "会话注册: clientId={}, uid={}, 会话数={}",
+                "会话注册: clientId={}, uid={}, 会话数={}, 已注册到 Redis",
                 client_id,
                 uid,
                 self.get_user_sessions(uid).len()
@@ -346,9 +364,17 @@ impl SessionManager {
 
         // TODO: 如果是最后一个会话，清理路由和在线状态
         if remaining_sessions == 0 {
-            // TODO: 从 Nacos 路由中移除
-            // TODO: 同步离线状态到 Redis
-            info!("用户 {} 的所有会话已断开", uid);
+            // 从 Redis 中注销设备
+            let manager = self.clone();
+            let uid_clone = uid;
+            let client_id_clone = client_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = manager.unregister_device_from_redis(uid_clone, &client_id_clone).await {
+                    error!("从 Redis 注销设备失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
+                }
+            });
+
+            info!("用户 {} 的所有会话已断开，已从 Redis 注销", uid);
         } else {
             info!(
                 "会话清理: session_id={}, uid={}, 剩余会话数={}",
@@ -402,6 +428,66 @@ impl SessionManager {
     /// 获取节点 ID
     pub fn node_id(&self) -> &str {
         &self.node_id
+    }
+
+    /// 注册设备到 Redis 路由表
+    ///
+    /// # 参数
+    /// - `uid`: 用户 ID
+    /// - `client_id`: 客户端 ID
+    /// - `node_id`: 节点 ID
+    async fn register_device_to_redis(
+        &self,
+        uid: UserId,
+        client_id: &str,
+        node_id: &str,
+    ) -> anyhow::Result<()> {
+        use crate::cache::RouterCacheKeyBuilder;
+        use redis::AsyncCommands;
+
+        // 构建 Redis Hash 键
+        let cache_key = RouterCacheKeyBuilder::build_device_node_map(String::new());
+        let field = format!("{}:{}", uid, client_id);
+
+        // 获取 Redis 连接并设置映射
+        let app_state = self.app_state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
+        let mut conn = app_state.redis().await?;
+        let _: () = conn.hset(&cache_key.key, &field, node_id).await?;
+
+        info!(
+            "设备已注册到 Redis: uid={}, client_id={}, node_id={}, key={}, field={}",
+            uid, client_id, node_id, cache_key.key, field
+        );
+
+        Ok(())
+    }
+
+    /// 从 Redis 路由表注销设备
+    ///
+    /// # 参数
+    /// - `uid`: 用户 ID
+    /// - `client_id`: 客户端 ID
+    async fn unregister_device_from_redis(&self, uid: UserId, client_id: &str) -> anyhow::Result<()> {
+        use crate::cache::RouterCacheKeyBuilder;
+        use redis::AsyncCommands;
+
+        // 构建 Redis Hash 键
+        let cache_key = RouterCacheKeyBuilder::build_device_node_map(String::new());
+        let field = format!("{}:{}", uid, client_id);
+
+        // 获取 Redis 连接并删除映射
+        let app_state = self.app_state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
+        let mut conn = app_state.redis().await?;
+        let _: () = conn.hdel(&cache_key.key, &field).await?;
+
+        info!(
+            "设备已从 Redis 注销: uid={}, client_id={}, key={}, field={}",
+            uid, client_id, cache_key.key, field
+        );
+
+        Ok(())
     }
 }
 

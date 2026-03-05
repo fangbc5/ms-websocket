@@ -1,6 +1,7 @@
-/// 视频会议参数 KEY
-use fbc_starter::cache::{CacheKey, CacheKeyBuilder, VIDEO_CALL, get_cache_prefix};
-use std::time::Duration;
+/// 视频会议房间列表缓存键
+use fbc_starter::cache::{get_cache_prefix, CacheKey, CacheKeyBuilder, VIDEO_CALL};
+
+use crate::cache::constants::EXPIRE_VIDEO_USER_ROOMS;
 
 /// 视频房间缓存键构建器
 pub struct VideoRoomsCacheKeyBuilder;
@@ -29,7 +30,7 @@ impl CacheKeyBuilder for VideoRoomsCacheKeyBuilder {
         None
     }
 
-    fn get_expire(&self) -> Option<Duration> {
-        Some(Duration::from_secs(15 * 60)) // 15 分钟
+    fn get_expire(&self) -> Option<std::time::Duration> {
+        Some(EXPIRE_VIDEO_USER_ROOMS)
     }
 }
