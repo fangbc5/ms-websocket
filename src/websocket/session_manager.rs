@@ -17,9 +17,6 @@ use tracing::{error, info, warn};
 /// 心跳超时时间（秒）
 const HEARTBEAT_TIMEOUT: u64 = 30;
 
-/// 心跳检查间隔（秒）
-const HEARTBEAT_CHECK_INTERVAL: u64 = 10;
-
 /// WebSocket 会话
 #[derive(Debug)]
 pub struct Session {
@@ -111,6 +108,8 @@ pub struct SessionManager {
     app_state: Option<Arc<fbc_starter::AppState>>,
     /// 本地路由缓存
     local_router_cache: Arc<crate::cache::LocalRouterCache>,
+    /// 时间轮（用于高效心跳检查）
+    timing_wheel: Arc<crate::websocket::TimingWheel>,
 }
 
 impl SessionManager {
@@ -127,6 +126,7 @@ impl SessionManager {
             node_id,
             app_state: None,
             local_router_cache: Arc::new(crate::cache::LocalRouterCache::default()),
+            timing_wheel: Arc::new(crate::websocket::TimingWheel::new()),
         };
 
         // 启动心跳检查任务
@@ -140,30 +140,20 @@ impl SessionManager {
         self.app_state = Some(app_state);
     }
 
-    /// 启动心跳检查任务
+    /// 启动心跳检查任务（使用时间轮算法）
     fn start_heartbeat_check_task(&self) -> JoinHandle<()> {
-        let sessions = self.sessions.clone();
+        let timing_wheel = self.timing_wheel.clone();
         let manager = self.clone();
+
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_CHECK_INTERVAL));
+            let mut interval = tokio::time::interval(Duration::from_secs(1)); // 每秒 tick 一次
             loop {
                 interval.tick().await;
 
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                // 先收集超时的会话 ID，避免在迭代时修改 sessions
-                let mut expired_sessions = Vec::new();
-                for entry in sessions.iter() {
-                    let session = entry.value();
-                    let last_seen = session.last_seen();
-                    if now.saturating_sub(last_seen) > HEARTBEAT_TIMEOUT {
-                        expired_sessions.push(entry.key().clone());
-                    }
-                }
+                // 时间轮前进一个槽位，获取超时的会话
+                let expired_sessions = timing_wheel.tick().await;
 
-                // 统一清理超时的会话
+                // 清理超时的会话
                 for session_id in expired_sessions {
                     warn!("会话超时: session_id={}", session_id);
                     manager.cleanup_session(&session_id);
@@ -187,6 +177,24 @@ impl SessionManager {
     /// 获取会话数量
     pub fn get_session_count(&self) -> usize {
         self.sessions.len()
+    }
+
+    /// 刷新会话心跳（更新时间轮）
+    ///
+    /// # 参数
+    /// - `session_id`: 会话 ID
+    pub fn refresh_session(&self, session_id: &SessionId) {
+        // 更新会话的 last_seen
+        if let Some(session) = self.sessions.get(session_id) {
+            session.touch();
+
+            // 刷新时间轮
+            let timing_wheel = self.timing_wheel.clone();
+            let session_id_clone = session_id.clone();
+            tokio::spawn(async move {
+                timing_wheel.refresh(&session_id_clone, HEARTBEAT_TIMEOUT).await;
+            });
+        }
     }
 
     /// 获取用户的所有会话
@@ -254,6 +262,13 @@ impl SessionManager {
             .insert(session_id.clone(), client_id.clone());
         self.sessions.insert(session_id.clone(), session);
 
+        // 3. 添加到时间轮
+        let timing_wheel = self.timing_wheel.clone();
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            timing_wheel.add(session_id_clone, HEARTBEAT_TIMEOUT).await;
+        });
+
         if is_first_device {
             // 注册设备到 Redis 路由表
             let manager = self.clone();
@@ -305,6 +320,13 @@ impl SessionManager {
 
         let uid = session.uid;
         let client_id = session.client_id.clone();
+
+        // 从时间轮移除
+        let timing_wheel = self.timing_wheel.clone();
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            timing_wheel.remove(&session_id_clone).await;
+        });
 
         // 发送 Close 消息，通知 writer_task 退出
         // 注意：即使通道满了或 writer_task 已退出，try_send 也不会阻塞

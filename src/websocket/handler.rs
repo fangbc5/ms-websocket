@@ -81,7 +81,9 @@ impl ConnectionHandler {
 
         match msg {
             Message::Text(text) => {
-                session.touch();
+                // 刷新会话心跳（更新时间轮）
+                self.session_manager.refresh_session(&self.session_id);
+
                 self.handler_chain
                     .handle_message(
                         &session,
@@ -94,7 +96,9 @@ impl ConnectionHandler {
                 true
             }
             Message::Binary(_) => {
-                session.touch();
+                // 刷新会话心跳（更新时间轮）
+                self.session_manager.refresh_session(&self.session_id);
+
                 // TODO: 处理二进制消息
                 true
             }

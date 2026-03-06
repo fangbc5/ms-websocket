@@ -9,9 +9,11 @@ pub mod handler;
 pub mod processor;
 pub mod router;
 pub mod session_manager;
+pub mod timing_wheel;
 
 pub use entity::NodeDownMessage;
 pub use handler::ws_route;
 pub use processor::{MessageHandlerChain, MessageProcessor};
 pub use router::MessageRouterService;
 pub use session_manager::{Session, SessionManager};
+pub use timing_wheel::TimingWheel;
