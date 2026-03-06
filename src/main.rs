@@ -1,14 +1,5 @@
 // WS 服务器主入口
-mod cache;
-mod enums;
-pub mod grpc;
-mod kafka;
-mod model;
-mod routes;
-mod service;
-mod state;
-mod types;
-pub mod websocket;
+use ms_websocket::*;
 
 use fbc_starter::{AppResult, Server};
 use std::sync::Arc;

@@ -28,3 +28,26 @@ redis = { workspace = true }
 [build-dependencies]
 tonic-build = { workspace = true }
 
+[dev-dependencies]
+# 测试框架
+tokio-test = "0.4"
+mockall = "0.13"
+wiremock = "0.6"
+fake = "2.9"
+
+# WebSocket 测试
+tokio-tungstenite = "0.24"
+
+# Redis 测试
+testcontainers = "0.23"
+
+# HTTP 测试
+axum-test = "19.1"
+tower = { workspace = true, features = ["util"] }
+
+# 断言增强
+assert_matches = "1.5"
+pretty_assertions = "1.4"
+
+# 性能测试
+criterion = "0.5"
