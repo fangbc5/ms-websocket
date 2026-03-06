@@ -1,7 +1,5 @@
 /// 消息处理链测试
-mod common;
-
-use common::*;
+use crate::common::*;
 use ms_websocket::model::ws_base_resp::WsBaseReq;
 use ms_websocket::websocket::processor::{MessageHandlerChain, MessageProcessor};
 use ms_websocket::websocket::Session;

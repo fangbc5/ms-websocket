@@ -9,3 +9,9 @@ pub const EXPIRE_ROOM_ADMIN_META: Duration = Duration::from_secs(60 * 60);
 
 /// 关闭房间标记：5 小时
 pub const EXPIRE_CLOSE_ROOM: Duration = Duration::from_secs(5 * 60 * 60);
+
+/// 在线状态缓存：30 天（需要跟 token 单次在线时长一致）
+pub const EXPIRE_PRESENCE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
+/// 好友关系状态缓存：7 天
+pub const EXPIRE_FRIEND_STATUS: Duration = Duration::from_secs(7 * 24 * 60 * 60);

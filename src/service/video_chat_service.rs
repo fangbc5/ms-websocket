@@ -12,7 +12,7 @@ use crate::{
         entity::Room,
         vo::{user_join_room_vo::UserJoinRoomVO, video_signal_vo::VideoSignalVO},
     },
-    service::{PushService, RoomMetadataService},
+    service::{PushService, RoomMetadataService, RoomTimeoutService},
     types::{RoomId, UserId},
 };
 
@@ -21,6 +21,8 @@ pub struct VideoChatService {
     app_state: Arc<AppState>,
     push_service: Arc<PushService>,
     room_metadata_service: Arc<RoomMetadataService>,
+    /// 延迟注入：避免 VideoChatService ↔ RoomTimeoutService 循环引用
+    room_timeout_service: std::sync::OnceLock<std::sync::Weak<RoomTimeoutService>>,
 }
 
 impl VideoChatService {
@@ -34,7 +36,24 @@ impl VideoChatService {
             app_state,
             push_service,
             room_metadata_service,
+            room_timeout_service: std::sync::OnceLock::new(),
         }
+    }
+
+    /// 延迟注入 RoomTimeoutService（解决循环依赖）
+    ///
+    /// 在 Services::new() 中所有服务构建完成后调用
+    pub fn set_room_timeout_service(&self, service: Arc<RoomTimeoutService>) {
+        let _ = self
+            .room_timeout_service
+            .set(Arc::downgrade(&service));
+    }
+
+    /// 获取 RoomTimeoutService（从 Weak 升级）
+    fn get_room_timeout_service(&self) -> Option<Arc<RoomTimeoutService>> {
+        self.room_timeout_service
+            .get()
+            .and_then(|weak| weak.upgrade())
     }
 
     /// 获取房间元数据
@@ -126,7 +145,12 @@ impl VideoChatService {
         // 5. 如果房间为空，触发清理
         if self.get_room_members(room_id).await?.is_empty() {
             if !self.room_metadata_service.is_room_closed(room_id).await? {
-                // TODO: 调用 RoomTimeoutService.schedule_room_cleanup
+                // 延迟 60 秒清理（等待用户可能重新加入）
+                if let Some(rts) = self.get_room_timeout_service() {
+                    rts.schedule_room_cleanup(room_id, 60).await?;
+                } else {
+                    warn!("RoomTimeoutService 未注入，无法调度房间清理: room_id={}", room_id);
+                }
             }
         }
 
@@ -216,11 +240,19 @@ impl VideoChatService {
             let _: () = conn.sadd(&key.key, &room_id.to_string()).await?;
         }
 
-        // TODO: 设置房间元数据
-        // room_metadata_service.set_room_start_time(room_id);
-        // room_metadata_service.set_room_type(room_id, 1);
-        // room_metadata_service.set_room_creator(room_id, creator_uid);
-        // room_metadata_service.add_room_admin(room_id, creator_uid);
+        // 设置房间元数据
+        self.room_metadata_service
+            .set_room_start_time(room_id)
+            .await?;
+        self.room_metadata_service
+            .set_room_type(room_id, 1)
+            .await?;
+        self.room_metadata_service
+            .set_room_creator(room_id, creator_uid)
+            .await?;
+        self.room_metadata_service
+            .add_room_admin(room_id, creator_uid)
+            .await?;
 
         Ok(room_id)
     }

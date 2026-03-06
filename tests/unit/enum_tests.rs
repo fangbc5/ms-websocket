@@ -44,7 +44,7 @@ fn test_ws_msg_type_from_all_variants() {
 fn test_ws_msg_type_from_invalid() {
     assert_eq!(WsMsgTypeEnum::from(0), None);
     assert_eq!(WsMsgTypeEnum::from(-1), None);
-    assert_eq!(WsMsgTypeEnum::from(20), None);
+    assert_eq!(WsMsgTypeEnum::from(31), None);
     assert_eq!(WsMsgTypeEnum::from(100), None);
     assert_eq!(WsMsgTypeEnum::from(i32::MAX), None);
     assert_eq!(WsMsgTypeEnum::from(i32::MIN), None);
@@ -52,7 +52,18 @@ fn test_ws_msg_type_from_invalid() {
 
 #[test]
 fn test_ws_msg_type_as_i32_roundtrip() {
+    // 1..=19 原有请求类型
     for i in 1..=19 {
+        let variant = WsMsgTypeEnum::from(i).unwrap();
+        assert_eq!(variant.as_i32(), i, "as_i32() 应返回 {}", i);
+    }
+    // 20..=30 新增的响应类型
+    for i in 20..=30 {
+        let variant = WsMsgTypeEnum::from(i).unwrap();
+        assert_eq!(variant.as_i32(), i, "as_i32() 应返回 {}", i);
+    }
+    // 40..=41 在线状态通知类型
+    for i in 40..=41 {
         let variant = WsMsgTypeEnum::from(i).unwrap();
         assert_eq!(variant.as_i32(), i, "as_i32() 应返回 {}", i);
     }

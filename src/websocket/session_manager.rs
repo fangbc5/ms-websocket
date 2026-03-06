@@ -9,6 +9,7 @@ use dashmap::DashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -110,6 +111,8 @@ pub struct SessionManager {
     local_router_cache: Arc<crate::cache::LocalRouterCache>,
     /// 时间轮（用于高效心跳检查）
     timing_wheel: Arc<crate::websocket::TimingWheel>,
+    /// PushService（延迟注入，解决循环依赖）
+    push_service: Arc<OnceLock<std::sync::Weak<crate::service::PushService>>>,
 }
 
 impl SessionManager {
@@ -127,6 +130,7 @@ impl SessionManager {
             app_state: None,
             local_router_cache: Arc::new(crate::cache::LocalRouterCache::default()),
             timing_wheel: Arc::new(crate::websocket::TimingWheel::new()),
+            push_service: Arc::new(OnceLock::new()),
         };
 
         // 启动心跳检查任务
@@ -138,6 +142,16 @@ impl SessionManager {
     /// 设置 AppState（在初始化后调用）
     pub fn set_app_state(&mut self, app_state: Arc<fbc_starter::AppState>) {
         self.app_state = Some(app_state);
+    }
+
+    /// 设置 PushService（延迟注入，解决 SessionManager ↔ PushService 循环依赖）
+    pub fn set_push_service(&self, push_service: Arc<crate::service::PushService>) {
+        let _ = self.push_service.set(Arc::downgrade(&push_service));
+    }
+
+    /// 获取 PushService
+    fn get_push_service(&self) -> Option<Arc<crate::service::PushService>> {
+        self.push_service.get().and_then(|weak| weak.upgrade())
     }
 
     /// 启动心跳检查任务（使用时间轮算法）
@@ -280,6 +294,10 @@ impl SessionManager {
                 if let Err(e) = manager.register_device_to_redis(uid_clone, &client_id_clone, &node_id).await {
                     error!("注册设备到 Redis 失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
                 }
+                // 同步上线状态
+                if let Err(e) = manager.sync_online(uid_clone, &client_id_clone, true).await {
+                    error!("同步上线状态失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
+                }
             });
 
             info!(
@@ -387,15 +405,19 @@ impl SessionManager {
             }
         }
 
-        // TODO: 如果是最后一个会话，清理路由和在线状态
+        // 如果是最后一个会话，清理路由和在线状态
         if remaining_sessions == 0 {
-            // 从 Redis 中注销设备
+            // 从 Redis 中注销设备 + 同步下线状态
             let manager = self.clone();
             let uid_clone = uid;
             let client_id_clone = client_id.clone();
             tokio::spawn(async move {
                 if let Err(e) = manager.unregister_device_from_redis(uid_clone, &client_id_clone).await {
                     error!("从 Redis 注销设备失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
+                }
+                // 同步下线状态
+                if let Err(e) = manager.sync_online(uid_clone, &client_id_clone, false).await {
+                    error!("同步下线状态失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
                 }
             });
 
@@ -489,6 +511,342 @@ impl SessionManager {
         );
 
         Ok(())
+    }
+
+    // ========== 在线状态同步（P1: Presence Management） ==========
+
+    /// 同步在线状态
+    ///
+    /// 对应 Java SessionManager.syncOnline
+    /// 功能：
+    /// 1. 维护全局在线设备 ZSet 和全局在线用户 ZSet
+    /// 2. 首次设备上线时：添加用户在线状态 + 更新群组在线成员 + 推送上下线通知
+    /// 3. 最后设备下线时：移除用户在线状态 + 更新群组在线成员 + 推送上下线通知
+    pub async fn sync_online(
+        &self,
+        uid: UserId,
+        client_id: &str,
+        online: bool,
+    ) -> anyhow::Result<()> {
+        use crate::cache::PresenceCacheKeyBuilder;
+        use crate::enums::WsMsgTypeEnum;
+        use redis::AsyncCommands;
+
+        let app_state = self.app_state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
+        let mut conn = app_state.redis().await?;
+
+        // 1. 生成用户设备 key、全局在线状态 key
+        let device_key = format!("{}:{}", uid, client_id);
+        let online_devices_key = PresenceCacheKeyBuilder::global_online_devices_key();
+        let online_users_key = PresenceCacheKeyBuilder::global_online_users_key();
+
+        // 2. 获取用户所有群组
+        let room_ids = self.get_room_ids(uid).await?;
+
+        // 3. 检查是否为首个/最后一个设备（原子操作）
+        let no_other_devices = self.is_first_or_last_device(uid, &device_key).await?;
+
+        if online {
+            // 上线逻辑
+            let millis = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as f64;
+            let _: () = conn.zadd(&online_devices_key.key, &device_key, millis).await?;
+
+            // 仅首个设备登录时才添加用户在线状态
+            if no_other_devices {
+                let _: () = conn.zadd(&online_users_key.key, uid, millis).await?;
+                self.update_group_presence(&room_ids, uid, true).await?;
+                self.push_device_status_change(
+                    &room_ids,
+                    uid,
+                    client_id,
+                    WsMsgTypeEnum::Online.as_i32(),
+                    &online_users_key.key,
+                ).await;
+            }
+
+            info!("用户上线同步完成: uid={}, client_id={}, first_device={}", uid, client_id, no_other_devices);
+        } else {
+            // 下线逻辑
+            let _: () = conn.zrem(&online_devices_key.key, &device_key).await?;
+
+            // 所有设备都下线后移除用户的在线状态
+            if no_other_devices {
+                let _: () = conn.zrem(&online_users_key.key, uid).await?;
+                self.update_group_presence(&room_ids, uid, false).await?;
+                self.push_device_status_change(
+                    &room_ids,
+                    uid,
+                    client_id,
+                    WsMsgTypeEnum::Offline.as_i32(),
+                    &online_users_key.key,
+                ).await;
+            }
+
+            info!("用户下线同步完成: uid={}, client_id={}, last_device={}", uid, client_id, no_other_devices);
+        }
+
+        Ok(())
+    }
+
+    /// 检查是否为首个或最后一个在线设备
+    ///
+    /// 扫描全局在线设备 ZSet，查找同一 uid 的其他设备
+    /// 返回 true 表示没有其他设备在线（即首次上线或最后下线）
+    async fn is_first_or_last_device(
+        &self,
+        uid: UserId,
+        exclude_device_key: &str,
+    ) -> anyhow::Result<bool> {
+        use crate::cache::PresenceCacheKeyBuilder;
+        use redis::AsyncCommands;
+
+        let app_state = self.app_state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
+        let mut conn = app_state.redis().await?;
+
+        let online_devices_key = PresenceCacheKeyBuilder::global_online_devices_key();
+        let prefix = format!("{}:", uid);
+
+        // 分批获取设备列表
+        let batch_size: isize = 1000;
+        let total: i64 = conn.zcard(&online_devices_key.key).await?;
+
+        let mut offset: isize = 0;
+        while (offset as i64) < total {
+            let devices: Vec<String> = conn.zrangebyscore_limit(
+                &online_devices_key.key,
+                f64::NEG_INFINITY,
+                f64::INFINITY,
+                offset,
+                batch_size,
+            ).await?;
+
+            for device in &devices {
+                if device.starts_with(&prefix) && device != exclude_device_key {
+                    return Ok(false); // 发现其他设备
+                }
+            }
+
+            offset += batch_size;
+        }
+
+        Ok(true)
+    }
+
+    /// 更新群组在线状态
+    ///
+    /// 对应 Java SessionManager.updateGroupPresence
+    /// - 上线：将用户添加到各群的在线成员 Set + 更新用户在线群组映射
+    /// - 下线：将用户从各群的在线成员 Set 移除 + 清理用户在线群组映射
+    async fn update_group_presence(
+        &self,
+        room_ids: &[u64],
+        uid: UserId,
+        online: bool,
+    ) -> anyhow::Result<()> {
+        use crate::cache::PresenceCacheKeyBuilder;
+        use redis::AsyncCommands;
+
+        if room_ids.is_empty() {
+            return Ok(());
+        }
+
+        let app_state = self.app_state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
+        let mut conn = app_state.redis().await?;
+
+        // 批量更新群组在线状态
+        for &room_id in room_ids {
+            let online_group_key = PresenceCacheKeyBuilder::online_group_members_key(room_id);
+            if online {
+                let _: () = conn.sadd(&online_group_key.key, uid).await?;
+            } else {
+                let _: () = conn.srem(&online_group_key.key, uid).await?;
+            }
+        }
+
+        // 更新用户群组在线映射
+        let online_user_groups_key = PresenceCacheKeyBuilder::online_user_groups_key(uid);
+        if online {
+            for &room_id in room_ids {
+                let _: () = conn.sadd(&online_user_groups_key.key, room_id).await?;
+            }
+        } else {
+            for &room_id in room_ids {
+                let _: () = conn.srem(&online_user_groups_key.key, room_id).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 获取用户所有群聊 room_id
+    ///
+    /// 对应 Java SessionManager.getRoomIds
+    async fn get_room_ids(&self, uid: UserId) -> anyhow::Result<Vec<u64>> {
+        use crate::cache::PresenceCacheKeyBuilder;
+        use redis::AsyncCommands;
+
+        let app_state = self.app_state.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
+        let mut conn = app_state.redis().await?;
+
+        let ug_key = PresenceCacheKeyBuilder::user_groups_key(uid);
+        let members: Vec<String> = conn.smembers(&ug_key.key).await?;
+
+        let room_ids: Vec<u64> = members
+            .iter()
+            .filter_map(|s| s.parse::<u64>().ok())
+            .collect();
+
+        Ok(room_ids)
+    }
+
+    /// 推送设备状态变更通知
+    ///
+    /// 对应 Java SessionManager.pushDeviceStatusChange
+    /// 1. 通知所有反向好友：该用户上/下线 + 好友在线人数
+    /// 2. 通知所有所在群的在线成员：该用户上/下线 + 群在线人数
+    async fn push_device_status_change(
+        &self,
+        room_ids: &[u64],
+        uid: UserId,
+        client_id: &str,
+        notify_type: i32,
+        online_key: &str,
+    ) {
+        use crate::cache::{FriendCacheKeyBuilder, PresenceCacheKeyBuilder};
+        use crate::model::vo::ws_online_notify::WSOnlineNotify;
+        use crate::model::ws_base_resp::WsBaseResp;
+        use redis::AsyncCommands;
+
+        let push_service = match self.get_push_service() {
+            Some(ps) => ps,
+            None => {
+                warn!("PushService 未注入，跳过状态变更通知: uid={}", uid);
+                return;
+            }
+        };
+
+        let app_state = match self.app_state.as_ref() {
+            Some(state) => state,
+            None => {
+                error!("AppState 未初始化，跳过状态变更通知: uid={}", uid);
+                return;
+            }
+        };
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        // ===== 1. 好友上下线通知 =====
+        let mut conn = match app_state.redis().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!("获取 Redis 连接失败: {}", e);
+                return;
+            }
+        };
+
+        // 获取反向好友列表（需要知道该用户在线状态的 uid）
+        let reverse_friends_key = FriendCacheKeyBuilder::reverse_friends_key(uid);
+        let friends: Vec<String> = match conn.smembers::<_, Vec<String>>(&reverse_friends_key.key).await {
+            Ok(f) => f,
+            Err(e) => {
+                error!("获取反向好友列表失败: uid={}, error={}", uid, e);
+                Vec::new()
+            }
+        };
+
+        for friend_str in &friends {
+            let friend_uid = match friend_str.parse::<u64>() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+            // 获取该好友的所有好友列表
+            let friends_key = FriendCacheKeyBuilder::user_friends_key(friend_uid);
+            let his_friends: Vec<String> = match conn.smembers::<_, Vec<String>>(&friends_key.key).await {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            // 管道批量查询分数（判断在线）
+            let mut online_count = 0i64;
+            for his_friend_str in &his_friends {
+                let score: Option<f64> = conn.zscore(online_key, his_friend_str).await.unwrap_or(None);
+                if score.is_some() {
+                    online_count += 1;
+                }
+            }
+
+            // 构建好友推送消息
+            let notify = WSOnlineNotify::friend_notify(uid, client_id.to_string(), now, online_count);
+            let resp = match WsBaseResp::from_data(notify_type, &notify) {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("序列化好友通知失败: {}", e);
+                    continue;
+                }
+            };
+
+            // 定向推送给好友
+            if let Err(e) = push_service.send_push_msg_single(resp, friend_uid, uid).await {
+                error!("推送好友上下线通知失败: friend_uid={}, error={}", friend_uid, e);
+            }
+        }
+
+        // ===== 2. 群组上下线通知 =====
+        if room_ids.is_empty() {
+            return;
+        }
+
+        // 批量获取各群在线人数
+        let mut room_counts: Vec<(u64, i64)> = Vec::new();
+        for &room_id in room_ids {
+            let online_group_key = PresenceCacheKeyBuilder::online_group_members_key(room_id);
+            let count: i64 = conn.scard(&online_group_key.key).await.unwrap_or(0);
+            if count > 0 {
+                room_counts.push((room_id, count));
+            }
+        }
+
+        // 逐群推送给在线成员
+        const BATCH_SIZE: usize = 200;
+        for (room_id, count) in room_counts {
+            let online_group_key = PresenceCacheKeyBuilder::online_group_members_key(room_id);
+            let member_ids: Vec<String> = match conn.smembers::<_, Vec<String>>(&online_group_key.key).await {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            let notify = WSOnlineNotify::group_notify(room_id, uid, client_id.to_string(), now, count);
+            let resp = match WsBaseResp::from_data(notify_type, &notify) {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("序列化群组通知失败: {}", e);
+                    continue;
+                }
+            };
+
+            // 分批发送
+            let member_uid_list: Vec<u64> = member_ids
+                .iter()
+                .filter_map(|s| s.parse::<u64>().ok())
+                .collect();
+
+            for chunk in member_uid_list.chunks(BATCH_SIZE) {
+                if let Err(e) = push_service.send_push_msg(resp.clone(), chunk.to_vec(), uid).await {
+                    error!("推送群组上下线通知失败: room_id={}, error={}", room_id, e);
+                }
+            }
+        }
     }
 
     /// 从 Redis 路由表注销设备

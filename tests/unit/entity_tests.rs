@@ -9,8 +9,7 @@ fn test_node_down_message_new() {
 
 #[test]
 fn test_node_down_message_channel() {
-    let msg = NodeDownMessage::new("node-1".to_string());
-    assert_eq!(msg.channel(), "ws-node-down");
+    assert_eq!(NodeDownMessage::channel(), "ws-node-down");
 }
 
 #[test]
@@ -26,7 +25,7 @@ fn test_node_down_message_deserialize() {
     let json = r#"{"node_id":"node-abc"}"#;
     let msg: NodeDownMessage = serde_json::from_str(json).unwrap();
     assert_eq!(msg.node_id, "node-abc");
-    assert_eq!(msg.channel(), "ws-node-down");
+    assert_eq!(NodeDownMessage::channel(), "ws-node-down");
 }
 
 #[test]
@@ -55,14 +54,13 @@ fn test_node_down_message_debug() {
 #[test]
 fn test_node_down_message_channel_constant() {
     // channel() 应始终返回相同值，与 node_id 无关
-    let msg1 = NodeDownMessage::new("a".to_string());
-    let msg2 = NodeDownMessage::new("b".to_string());
-    assert_eq!(msg1.channel(), msg2.channel());
+    // channel() 是关联函数，不依赖实例
+    assert_eq!(NodeDownMessage::channel(), NodeDownMessage::channel());
 }
 
 #[test]
 fn test_node_down_message_empty_node_id() {
     let msg = NodeDownMessage::new(String::new());
     assert_eq!(msg.node_id, "");
-    assert_eq!(msg.channel(), "ws-node-down");
+    assert_eq!(NodeDownMessage::channel(), "ws-node-down");
 }

@@ -52,6 +52,9 @@ impl Services {
             node_id,
         ));
 
+        // 3.1 延迟注入: 解决 SessionManager ↔ PushService 循环依赖
+        session_manager.set_push_service(push_service.clone());
+
         // 4. 初始化 VideoChatService
         let video_chat_service: Arc<VideoChatService> = {
             Arc::new(VideoChatService::new(
@@ -68,6 +71,9 @@ impl Services {
             room_metadata_service.clone(),
             app_state.clone(),
         ));
+
+        // 5.1 延迟注入: 解决 VideoChatService ↔ RoomTimeoutService 循环依赖
+        video_chat_service.set_room_timeout_service(room_timeout_service.clone());
 
         // 6. 初始化 SessionRecoveryService
         let session_recovery_service =

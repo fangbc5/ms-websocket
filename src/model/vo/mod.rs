@@ -17,3 +17,4 @@ pub mod start_signaling_vo;
 pub mod user_join_room_vo;
 pub mod user_kicked_vo;
 pub mod video_signal_vo;
+pub mod ws_online_notify;

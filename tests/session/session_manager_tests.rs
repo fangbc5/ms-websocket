@@ -1,7 +1,5 @@
 /// 会话管理器集成测试
-mod common;
-
-use common::*;
+use crate::common::*;
 use ms_websocket::websocket::SessionManager;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};

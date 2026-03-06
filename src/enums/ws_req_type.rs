@@ -45,6 +45,36 @@ pub enum WsMsgTypeEnum {
     JoinVideo = 18,
     /// 用户离开房间
     LeaveVideo = 19,
+
+    // === 响应专用类型（20+） ===
+    /// 通话已接通（推送给双方）
+    CallAccepted = 20,
+    /// 呼叫被拒绝
+    CallRejected = 21,
+    /// 取消通话
+    Cancel = 22,
+    /// 挂断通话
+    Dropped = 23,
+    /// 媒体控制变更通知
+    MediaControl = 24,
+    /// 开始信令
+    StartSignaling = 25,
+    /// 开始屏幕共享
+    ScreenSharingStarted = 26,
+    /// 停止屏幕共享
+    ScreenSharingStopped = 27,
+    /// 网络质量差
+    NetworkPoor = 28,
+    /// 用户被踢出
+    UserKicked = 29,
+    /// 全体静音
+    AllMuted = 30,
+
+    // === 在线状态通知类型（40+） ===
+    /// 上线通知
+    Online = 40,
+    /// 下线通知
+    Offline = 41,
 }
 
 impl WsMsgTypeEnum {
@@ -70,6 +100,19 @@ impl WsMsgTypeEnum {
             17 => Some(WsMsgTypeEnum::Timeout),
             18 => Some(WsMsgTypeEnum::JoinVideo),
             19 => Some(WsMsgTypeEnum::LeaveVideo),
+            20 => Some(WsMsgTypeEnum::CallAccepted),
+            21 => Some(WsMsgTypeEnum::CallRejected),
+            22 => Some(WsMsgTypeEnum::Cancel),
+            23 => Some(WsMsgTypeEnum::Dropped),
+            24 => Some(WsMsgTypeEnum::MediaControl),
+            25 => Some(WsMsgTypeEnum::StartSignaling),
+            26 => Some(WsMsgTypeEnum::ScreenSharingStarted),
+            27 => Some(WsMsgTypeEnum::ScreenSharingStopped),
+            28 => Some(WsMsgTypeEnum::NetworkPoor),
+            29 => Some(WsMsgTypeEnum::UserKicked),
+            30 => Some(WsMsgTypeEnum::AllMuted),
+            40 => Some(WsMsgTypeEnum::Online),
+            41 => Some(WsMsgTypeEnum::Offline),
             _ => None,
         }
     }
@@ -102,6 +145,19 @@ impl WsMsgTypeEnum {
             WsMsgTypeEnum::Timeout => "超时",
             WsMsgTypeEnum::JoinVideo => "用户加入房间",
             WsMsgTypeEnum::LeaveVideo => "用户离开房间",
+            WsMsgTypeEnum::CallAccepted => "通话已接通",
+            WsMsgTypeEnum::CallRejected => "呼叫被拒绝",
+            WsMsgTypeEnum::Cancel => "取消通话",
+            WsMsgTypeEnum::Dropped => "挂断通话",
+            WsMsgTypeEnum::MediaControl => "媒体控制变更",
+            WsMsgTypeEnum::StartSignaling => "开始信令",
+            WsMsgTypeEnum::ScreenSharingStarted => "开始屏幕共享",
+            WsMsgTypeEnum::ScreenSharingStopped => "停止屏幕共享",
+            WsMsgTypeEnum::NetworkPoor => "网络质量差",
+            WsMsgTypeEnum::UserKicked => "用户被踢出",
+            WsMsgTypeEnum::AllMuted => "全体静音",
+            WsMsgTypeEnum::Online => "上线通知",
+            WsMsgTypeEnum::Offline => "下线通知",
         }
     }
 

@@ -1,10 +1,9 @@
 /// 消息处理器测试
 ///
 /// 覆盖所有 Processor 的 supports() 和 process() 方法
-mod common;
-
-use common::*;
+use crate::common::*;
 use ms_websocket::model::ws_base_resp::WsBaseReq;
+use ms_websocket::service::Services;
 use ms_websocket::websocket::processor::{
     DefaultMessageProcessor, HeartbeatProcessor, MessageProcessor,
 };
@@ -14,6 +13,49 @@ use ms_websocket::websocket::processor::meet::{
 };
 use serde_json::json;
 use std::sync::Arc;
+use tokio::sync::OnceCell;
+
+type TestServices = (
+    Arc<fbc_starter::AppState>,
+    Arc<Services>,
+    Arc<ms_websocket::websocket::SessionManager>,
+);
+
+static TEST_SERVICES: OnceCell<TestServices> = OnceCell::const_new();
+
+async fn get_services() -> &'static TestServices {
+    TEST_SERVICES
+        .get_or_init(|| async { create_test_services().await })
+        .await
+}
+
+fn mk_video(s: &Arc<Services>) -> VideoProcessor {
+    VideoProcessor::new(s.video_chat_service.clone(), s.room_timeout_service.clone())
+}
+
+fn mk_video_call(s: &Arc<Services>) -> VideoCallProcessor {
+    VideoCallProcessor::new(
+        s.video_chat_service.clone(),
+        s.push_service.clone(),
+        s.room_timeout_service.clone(),
+    )
+}
+
+fn mk_media_control(s: &Arc<Services>) -> MediaControlProcessor {
+    MediaControlProcessor::new(s.video_chat_service.clone())
+}
+
+fn mk_room_admin(s: &Arc<Services>) -> RoomAdminProcessor {
+    RoomAdminProcessor::new(
+        s.video_chat_service.clone(),
+        s.push_service.clone(),
+        s.room_timeout_service.clone(),
+    )
+}
+
+fn mk_quality_monitor(s: &Arc<Services>) -> QualityMonitorProcessor {
+    QualityMonitorProcessor::new(s.video_chat_service.clone(), s.push_service.clone())
+}
 
 // ========================
 // HeartbeatProcessor 测试
@@ -94,21 +136,24 @@ async fn test_default_processor_default_trait() {
 
 #[tokio::test]
 async fn test_video_processor_supports_webrtc_signal() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let req = WsBaseReq { r#type: 14, data: json!({}) }; // WebrtcSignal
     assert!(processor.supports(&req));
 }
 
 #[tokio::test]
 async fn test_video_processor_supports_video_heartbeat() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let req = WsBaseReq { r#type: 4, data: json!({}) }; // VideoHeartbeat
     assert!(processor.supports(&req));
 }
 
 #[tokio::test]
 async fn test_video_processor_rejects_other_types() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     for t in [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19] {
         let req = WsBaseReq { r#type: t, data: json!({}) };
         assert!(!processor.supports(&req), "VideoProcessor 不应支持 type={}", t);
@@ -117,7 +162,8 @@ async fn test_video_processor_rejects_other_types() {
 
 #[tokio::test]
 async fn test_video_processor_process_signal_valid() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 14,
@@ -133,7 +179,8 @@ async fn test_video_processor_process_signal_valid() {
 
 #[tokio::test]
 async fn test_video_processor_process_signal_invalid_data() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 14,
@@ -145,7 +192,8 @@ async fn test_video_processor_process_signal_invalid_data() {
 
 #[tokio::test]
 async fn test_video_processor_process_heartbeat_valid() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 4,
@@ -156,7 +204,8 @@ async fn test_video_processor_process_heartbeat_valid() {
 
 #[tokio::test]
 async fn test_video_processor_process_heartbeat_invalid() {
-    let processor = VideoProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 4,
@@ -167,7 +216,8 @@ async fn test_video_processor_process_heartbeat_invalid() {
 
 #[tokio::test]
 async fn test_video_processor_default() {
-    let processor = VideoProcessor::default();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video(services);
     let req = WsBaseReq { r#type: 14, data: json!({}) };
     assert!(processor.supports(&req));
 }
@@ -178,21 +228,24 @@ async fn test_video_processor_default() {
 
 #[tokio::test]
 async fn test_video_call_processor_supports_request() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let req = WsBaseReq { r#type: 5, data: json!({}) }; // VideoCallRequest
     assert!(processor.supports(&req));
 }
 
 #[tokio::test]
 async fn test_video_call_processor_supports_response() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let req = WsBaseReq { r#type: 6, data: json!({}) }; // VideoCallResponse
     assert!(processor.supports(&req));
 }
 
 #[tokio::test]
 async fn test_video_call_processor_rejects_other_types() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     for t in [1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] {
         let req = WsBaseReq { r#type: t, data: json!({}) };
         assert!(!processor.supports(&req));
@@ -201,7 +254,8 @@ async fn test_video_call_processor_rejects_other_types() {
 
 #[tokio::test]
 async fn test_video_call_processor_process_request_valid() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 5,
@@ -216,7 +270,8 @@ async fn test_video_call_processor_process_request_valid() {
 
 #[tokio::test]
 async fn test_video_call_processor_process_request_invalid() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 5,
@@ -227,7 +282,8 @@ async fn test_video_call_processor_process_request_invalid() {
 
 #[tokio::test]
 async fn test_video_call_processor_process_response_valid() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 6,
@@ -242,7 +298,8 @@ async fn test_video_call_processor_process_response_valid() {
 
 #[tokio::test]
 async fn test_video_call_processor_process_response_rejected() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 6,
@@ -257,7 +314,8 @@ async fn test_video_call_processor_process_response_rejected() {
 
 #[tokio::test]
 async fn test_video_call_processor_process_response_invalid() {
-    let processor = VideoCallProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 6,
@@ -268,7 +326,8 @@ async fn test_video_call_processor_process_response_invalid() {
 
 #[tokio::test]
 async fn test_video_call_processor_default() {
-    let processor = VideoCallProcessor::default();
+    let (_, services, _) = get_services().await;
+    let processor = mk_video_call(services);
     assert!(processor.supports(&WsBaseReq { r#type: 5, data: json!({}) }));
 }
 
@@ -278,15 +337,25 @@ async fn test_video_call_processor_default() {
 
 #[tokio::test]
 async fn test_media_control_processor_supports_mute_audio() {
-    let processor = MediaControlProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_media_control(services);
     let req = WsBaseReq { r#type: 7, data: json!({}) }; // MediaMuteAudio
     assert!(processor.supports(&req));
 }
 
 #[tokio::test]
+async fn test_media_control_processor_supports_mute_video() {
+    let (_, services, _) = get_services().await;
+    let processor = mk_media_control(services);
+    let req = WsBaseReq { r#type: 8, data: json!({}) }; // MediaMuteVideo
+    assert!(processor.supports(&req));
+}
+
+#[tokio::test]
 async fn test_media_control_processor_rejects_other_types() {
-    let processor = MediaControlProcessor::new();
-    for t in [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] {
+    let (_, services, _) = get_services().await;
+    let processor = mk_media_control(services);
+    for t in [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] {
         let req = WsBaseReq { r#type: t, data: json!({}) };
         assert!(!processor.supports(&req));
     }
@@ -294,7 +363,8 @@ async fn test_media_control_processor_rejects_other_types() {
 
 #[tokio::test]
 async fn test_media_control_processor_process_valid() {
-    let processor = MediaControlProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_media_control(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 7,
@@ -309,7 +379,8 @@ async fn test_media_control_processor_process_valid() {
 
 #[tokio::test]
 async fn test_media_control_processor_process_invalid() {
-    let processor = MediaControlProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_media_control(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 7,
@@ -320,7 +391,8 @@ async fn test_media_control_processor_process_invalid() {
 
 #[tokio::test]
 async fn test_media_control_processor_default() {
-    let processor = MediaControlProcessor::default();
+    let (_, services, _) = get_services().await;
+    let processor = mk_media_control(services);
     assert!(processor.supports(&WsBaseReq { r#type: 7, data: json!({}) }));
 }
 
@@ -330,25 +402,29 @@ async fn test_media_control_processor_default() {
 
 #[tokio::test]
 async fn test_room_admin_processor_supports_close_room() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     assert!(processor.supports(&WsBaseReq { r#type: 11, data: json!({}) })); // CloseRoom
 }
 
 #[tokio::test]
 async fn test_room_admin_processor_supports_kick_user() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     assert!(processor.supports(&WsBaseReq { r#type: 12, data: json!({}) })); // KickUser
 }
 
 #[tokio::test]
 async fn test_room_admin_processor_supports_mute_all() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     assert!(processor.supports(&WsBaseReq { r#type: 9, data: json!({}) })); // MediaMuteAll
 }
 
 #[tokio::test]
 async fn test_room_admin_processor_rejects_other_types() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     for t in [1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 15, 16, 17, 18, 19] {
         let req = WsBaseReq { r#type: t, data: json!({}) };
         assert!(!processor.supports(&req));
@@ -357,7 +433,8 @@ async fn test_room_admin_processor_rejects_other_types() {
 
 #[tokio::test]
 async fn test_room_admin_processor_close_room_valid() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 11,
@@ -368,7 +445,8 @@ async fn test_room_admin_processor_close_room_valid() {
 
 #[tokio::test]
 async fn test_room_admin_processor_close_room_invalid() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 11,
@@ -379,7 +457,8 @@ async fn test_room_admin_processor_close_room_invalid() {
 
 #[tokio::test]
 async fn test_room_admin_processor_kick_user_valid() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 12,
@@ -394,7 +473,8 @@ async fn test_room_admin_processor_kick_user_valid() {
 
 #[tokio::test]
 async fn test_room_admin_processor_kick_user_without_reason() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 12,
@@ -409,7 +489,8 @@ async fn test_room_admin_processor_kick_user_without_reason() {
 
 #[tokio::test]
 async fn test_room_admin_processor_kick_user_invalid() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 12,
@@ -420,7 +501,8 @@ async fn test_room_admin_processor_kick_user_invalid() {
 
 #[tokio::test]
 async fn test_room_admin_processor_mute_all_valid() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 9,
@@ -434,7 +516,8 @@ async fn test_room_admin_processor_mute_all_valid() {
 
 #[tokio::test]
 async fn test_room_admin_processor_mute_all_unmute() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 9,
@@ -448,7 +531,8 @@ async fn test_room_admin_processor_mute_all_unmute() {
 
 #[tokio::test]
 async fn test_room_admin_processor_mute_all_invalid() {
-    let processor = RoomAdminProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 9,
@@ -459,7 +543,8 @@ async fn test_room_admin_processor_mute_all_invalid() {
 
 #[tokio::test]
 async fn test_room_admin_processor_default() {
-    let processor = RoomAdminProcessor::default();
+    let (_, services, _) = get_services().await;
+    let processor = mk_room_admin(services);
     assert!(processor.supports(&WsBaseReq { r#type: 11, data: json!({}) }));
 }
 
@@ -469,19 +554,22 @@ async fn test_room_admin_processor_default() {
 
 #[tokio::test]
 async fn test_quality_monitor_supports_network_report() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     assert!(processor.supports(&WsBaseReq { r#type: 13, data: json!({}) })); // NetworkReport
 }
 
 #[tokio::test]
 async fn test_quality_monitor_supports_screen_sharing() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     assert!(processor.supports(&WsBaseReq { r#type: 10, data: json!({}) })); // ScreenSharing
 }
 
 #[tokio::test]
 async fn test_quality_monitor_rejects_other_types() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     for t in [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 19] {
         let req = WsBaseReq { r#type: t, data: json!({}) };
         assert!(!processor.supports(&req));
@@ -490,7 +578,8 @@ async fn test_quality_monitor_rejects_other_types() {
 
 #[tokio::test]
 async fn test_quality_monitor_network_report_valid() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 13,
@@ -504,7 +593,8 @@ async fn test_quality_monitor_network_report_valid() {
 
 #[tokio::test]
 async fn test_quality_monitor_network_report_poor_quality() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 13,
@@ -519,7 +609,8 @@ async fn test_quality_monitor_network_report_poor_quality() {
 
 #[tokio::test]
 async fn test_quality_monitor_network_report_invalid() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 13,
@@ -530,7 +621,8 @@ async fn test_quality_monitor_network_report_invalid() {
 
 #[tokio::test]
 async fn test_quality_monitor_screen_sharing_start() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 10,
@@ -544,7 +636,8 @@ async fn test_quality_monitor_screen_sharing_start() {
 
 #[tokio::test]
 async fn test_quality_monitor_screen_sharing_stop() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 10,
@@ -558,7 +651,8 @@ async fn test_quality_monitor_screen_sharing_stop() {
 
 #[tokio::test]
 async fn test_quality_monitor_screen_sharing_invalid() {
-    let processor = QualityMonitorProcessor::new();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let req = WsBaseReq {
         r#type: 10,
@@ -569,7 +663,8 @@ async fn test_quality_monitor_screen_sharing_invalid() {
 
 #[tokio::test]
 async fn test_quality_monitor_default() {
-    let processor = QualityMonitorProcessor::default();
+    let (_, services, _) = get_services().await;
+    let processor = mk_quality_monitor(services);
     assert!(processor.supports(&WsBaseReq { r#type: 13, data: json!({}) }));
 }
 

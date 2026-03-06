@@ -47,3 +47,59 @@ pub fn create_test_sessions(count: usize, base_uid: UserId) -> Vec<Arc<Session>>
 pub async fn wait_for_async_tasks() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 }
+
+/// 创建连接真实 Redis + Kafka 的 AppState（用于需要服务依赖的处理器测试）
+pub async fn create_test_app_state() -> Arc<fbc_starter::AppState> {
+    let redis_url =
+        std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    let redis_password = std::env::var("TEST_REDIS_PASSWORD").ok();
+
+    let redis_pool = fbc_starter::cache::redis::init_redis(
+        &redis_url,
+        redis_password.as_deref(),
+        5,
+    )
+    .await
+    .expect("无法连接 Redis，请确保 Redis 正在运行并设置 TEST_REDIS_PASSWORD");
+
+    let kafka_brokers =
+        std::env::var("TEST_KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
+
+    let kafka_producer_config = fbc_starter::KafkaProducer::new(
+        &kafka_brokers,
+        &fbc_starter::config::KafkaProducerConfig {
+            retries: 3,
+            enable_idempotence: true,
+            acks: "all".to_string(),
+        },
+    )
+    .expect("无法连接 Kafka，请确保 Kafka 正在运行");
+
+    let producer: fbc_starter::MessageProducerType = Arc::new(kafka_producer_config);
+
+    let app_state = fbc_starter::AppState::new()
+        .with_redis(redis_pool)
+        .with_message_producer(producer);
+
+    Arc::new(app_state)
+}
+
+/// 创建测试用的 Services 容器（需要 Redis + Kafka）
+pub async fn create_test_services() -> (
+    Arc<fbc_starter::AppState>,
+    Arc<ms_websocket::service::Services>,
+    Arc<ms_websocket::websocket::SessionManager>,
+) {
+    let app_state = create_test_app_state().await;
+
+    let mut session_manager = ms_websocket::websocket::SessionManager::new();
+    session_manager.set_app_state(app_state.clone());
+    let session_manager = Arc::new(session_manager);
+
+    let services = Arc::new(
+        ms_websocket::service::Services::new(app_state.clone(), session_manager.clone())
+            .expect("Services 初始化失败"),
+    );
+
+    (app_state, services, session_manager)
+}

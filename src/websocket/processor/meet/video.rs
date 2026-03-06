@@ -3,12 +3,13 @@ use crate::enums::WsMsgTypeEnum;
 
 use crate::model::vo::heartbeat_req::HeartbeatReq;
 use crate::model::ws_base_resp::WsBaseReq;
+use crate::service::{RoomTimeoutService, VideoChatService};
 use crate::types::{ClientId, RoomId, SessionId, UserId};
 use crate::websocket::processor::message_processor::MessageProcessor;
 use crate::websocket::session_manager::Session;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info, warn};
 
 /// 视频信令请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,16 +25,24 @@ struct VideoSignalReq {
 }
 
 /// 视频信令处理器
-/// 
+///
 /// 功能：
-/// 1. 处理用户加入/离开视频房间
-/// 2. 转发点对点和群组视频信令
-/// 3. 处理视频心跳保活
-pub struct VideoProcessor;
+/// 1. 转发点对点和群组视频信令
+/// 2. 处理视频心跳保活
+pub struct VideoProcessor {
+    video_service: Arc<VideoChatService>,
+    room_timeout_service: Arc<RoomTimeoutService>,
+}
 
 impl VideoProcessor {
-    pub fn new() -> Self {
-        Self
+    pub fn new(
+        video_service: Arc<VideoChatService>,
+        room_timeout_service: Arc<RoomTimeoutService>,
+    ) -> Self {
+        Self {
+            video_service,
+            room_timeout_service,
+        }
     }
 }
 
@@ -57,7 +66,7 @@ impl MessageProcessor for VideoProcessor {
                 let signal_req: VideoSignalReq = match serde_json::from_value(req.data.clone()) {
                     Ok(req) => req,
                     Err(e) => {
-                        tracing::warn!("解析视频信令失败: {}", e);
+                        warn!("解析视频信令失败: {}", e);
                         return;
                     }
                 };
@@ -67,37 +76,45 @@ impl MessageProcessor for VideoProcessor {
                     uid, signal_req.room_id, signal_req.signal_type
                 );
 
-                // TODO: 转发信令到房间成员
-                // video_service.forwardSignal(uid, signal_req.room_id, signal_req.signal, signal_req.signal_type);
+                // 转发信令到房间成员
+                if let Err(e) = self
+                    .video_service
+                    .forward_signal(
+                        uid,
+                        signal_req.room_id,
+                        signal_req.signal,
+                        signal_req.signal_type,
+                    )
+                    .await
+                {
+                    error!("转发视频信令失败: {}", e);
+                }
             }
             Some(WsMsgTypeEnum::VideoHeartbeat) => {
                 // 处理视频心跳
                 let heartbeat: HeartbeatReq = match serde_json::from_value(req.data.clone()) {
                     Ok(hb) => hb,
                     Err(e) => {
-                        tracing::warn!("解析视频心跳失败: {}", e);
+                        warn!("解析视频心跳失败: {}", e);
                         return;
                     }
                 };
 
-                info!(
-                    "收到视频心跳: uid={}, room_id={}",
-                    uid, heartbeat.room_id
-                );
+                info!("收到视频心跳: uid={}, room_id={}", uid, heartbeat.room_id);
 
-                // TODO: 刷新房间活跃时间
-                // room_timeout_service.refreshRoomActivity(heartbeat.room_id);
+                // 刷新房间活跃时间（5分钟无心跳自动清理）
+                if let Err(e) = self
+                    .room_timeout_service
+                    .refresh_room_activity(heartbeat.room_id)
+                    .await
+                {
+                    error!("刷新房间活跃时间失败: {}", e);
+                }
             }
             _ => {
-                tracing::warn!("未知的视频消息类型: {}", req.r#type);
+                warn!("未知的视频消息类型: {}", req.r#type);
             }
         }
-    }
-}
-
-impl Default for VideoProcessor {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

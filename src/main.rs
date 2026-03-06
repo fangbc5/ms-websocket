@@ -24,7 +24,7 @@ async fn main() -> AppResult<()> {
         );
 
         // 创建消息处理链
-        let handler_chain = routes::create_handler_chain(app_state.clone());
+        let handler_chain = routes::create_handler_chain(app_state.clone(), &services);
 
         // 创建应用数据
         let ws_state = Arc::new(WsState::new(
