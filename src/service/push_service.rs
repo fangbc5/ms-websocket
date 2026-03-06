@@ -24,6 +24,8 @@ pub struct PushService {
     node_id: String,
     /// 本地推送并发控制（最大32线程并发）
     local_push_semaphore: Arc<Semaphore>,
+    /// 本地路由缓存
+    local_router_cache: Arc<crate::cache::LocalRouterCache>,
 }
 
 impl PushService {
@@ -38,6 +40,7 @@ impl PushService {
             app_state,
             node_id,
             local_push_semaphore: Arc::new(Semaphore::new(32)),
+            local_router_cache: Arc::new(crate::cache::LocalRouterCache::default()),
         }
     }
 
@@ -100,24 +103,28 @@ impl PushService {
         // 1. 提取目标 UID 集合
         let target_uids: HashSet<u64> = uids.iter().copied().collect();
 
-        // 2. 获取全局设备-节点映射（使用 HSCAN 分批加载）
+        // 2. 获取全局设备-节点映射（优先从本地缓存获取）
         let device_node_map = RouterCacheKeyBuilder::build_device_node_map(String::new());
         let mut result: HashMap<String, HashMap<String, u64>> = HashMap::new();
 
         // 3. 过滤活跃节点
         let active_nodes = self.get_all_active_nodes().await?;
 
-        // 4. 使用 HGETALL 获取所有设备-节点映射（如果数据量大，可以考虑使用 HSCAN）
+        // 4. 从 Redis 获取所有设备-节点映射
         let mut conn = self.app_state.redis().await?;
         let items: HashMap<String, String> = conn.hgetall(&device_node_map.key).await?;
 
+        // 5. 统计缓存命中率（用于监控）
+        let mut cache_hits = 0;
+        let mut cache_misses = 0;
+
         for (field, node_id) in items {
-            // 4.1 检查节点是否活跃
+            // 5.1 检查节点是否活跃
             if !active_nodes.contains(&node_id) {
                 continue;
             }
 
-            // 4.2 按 uid 过滤目标用户
+            // 5.2 按 uid 过滤目标用户
             let parts: Vec<&str> = field.split(':').collect();
             if parts.len() != 2 {
                 continue;
@@ -129,16 +136,39 @@ impl PushService {
             };
             let client_id = parts[1];
 
-            // 4.3 判断是否是目标用户
+            // 5.3 判断是否是目标用户
             if !target_uids.contains(&uid) {
                 continue;
             }
 
-            // 4.4 构建映射：节点 → 设备 → UID
-            result
-                .entry(node_id)
-                .or_insert_with(HashMap::new)
-                .insert(client_id.to_string(), uid);
+            // 5.4 检查本地缓存
+            if let Some(cached_node_id) = self.local_router_cache.get(uid, client_id) {
+                cache_hits += 1;
+                // 使用缓存的节点 ID
+                result
+                    .entry(cached_node_id)
+                    .or_insert_with(HashMap::new)
+                    .insert(client_id.to_string(), uid);
+            } else {
+                cache_misses += 1;
+                // 更新本地缓存
+                self.local_router_cache.set(uid, client_id, node_id.clone());
+
+                // 使用 Redis 的节点 ID
+                result
+                    .entry(node_id)
+                    .or_insert_with(HashMap::new)
+                    .insert(client_id.to_string(), uid);
+            }
+        }
+
+        // 6. 记录缓存命中率
+        if cache_hits + cache_misses > 0 {
+            let hit_rate = (cache_hits as f64 / (cache_hits + cache_misses) as f64) * 100.0;
+            info!(
+                "路由缓存命中率: {:.2}% (命中={}, 未命中={})",
+                hit_rate, cache_hits, cache_misses
+            );
         }
 
         Ok(result)

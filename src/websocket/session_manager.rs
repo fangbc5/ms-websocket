@@ -109,6 +109,8 @@ pub struct SessionManager {
     node_id: String,
     /// AppState 引用（用于访问 Redis）
     app_state: Option<Arc<fbc_starter::AppState>>,
+    /// 本地路由缓存
+    local_router_cache: Arc<crate::cache::LocalRouterCache>,
 }
 
 impl SessionManager {
@@ -124,6 +126,7 @@ impl SessionManager {
             accepting_new_connections: Arc::new(AtomicBool::new(true)),
             node_id,
             app_state: None,
+            local_router_cache: Arc::new(crate::cache::LocalRouterCache::default()),
         };
 
         // 启动心跳检查任务
@@ -455,6 +458,9 @@ impl SessionManager {
         let mut conn = app_state.redis().await?;
         let _: () = conn.hset(&cache_key.key, &field, node_id).await?;
 
+        // 更新本地缓存
+        self.local_router_cache.set(uid, client_id, node_id.to_string());
+
         info!(
             "设备已注册到 Redis: uid={}, client_id={}, node_id={}, key={}, field={}",
             uid, client_id, node_id, cache_key.key, field
@@ -481,6 +487,9 @@ impl SessionManager {
             .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
         let mut conn = app_state.redis().await?;
         let _: () = conn.hdel(&cache_key.key, &field).await?;
+
+        // 删除本地缓存
+        self.local_router_cache.remove(uid, client_id);
 
         info!(
             "设备已从 Redis 注销: uid={}, client_id={}, key={}, field={}",
