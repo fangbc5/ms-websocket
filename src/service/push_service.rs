@@ -68,17 +68,28 @@ impl PushService {
         // 1. 构建三级映射: 节点 → 设备指纹 → 用户ID
         let node_device_user = self.find_node_device_user(&uid_list).await?;
 
-        // 2. 按节点分组推送
+        // 2. 分离本地节点和远程节点
+        let mut local_uids = Vec::new();
+        let mut remote_nodes = Vec::new();
+
         for (node_id, device_user_map) in node_device_user {
             if node_id == self.node_id {
-                // 本地节点直接推送
-                let local_uids: Vec<u64> = device_user_map.values().copied().collect();
-                self.local_push(local_uids, &msg).await?;
+                // 收集本地用户
+                local_uids.extend(device_user_map.values().copied());
             } else {
-                // 跨节点推送（通过 MQ）
-                self.send_to_node_via_mq(&node_id, &msg, device_user_map, cuid)
-                    .await?;
+                // 收集远程节点信息
+                remote_nodes.push((node_id, device_user_map));
             }
+        }
+
+        // 3. 本地节点直接推送
+        if !local_uids.is_empty() {
+            self.local_push(local_uids, &msg).await?;
+        }
+
+        // 4. 批量发送到远程节点（通过 MQ）
+        if !remote_nodes.is_empty() {
+            self.batch_send_to_nodes_via_mq(remote_nodes, &msg, cuid).await?;
         }
 
         Ok(())
@@ -261,7 +272,57 @@ impl PushService {
         Ok(())
     }
 
+    /// 批量将消息推送到多个节点（通过 MQ）
+    async fn batch_send_to_nodes_via_mq(
+        &self,
+        nodes: Vec<(String, HashMap<String, u64>)>,
+        msg: &WsBaseResp,
+        cuid: u64,
+    ) -> anyhow::Result<()> {
+        if nodes.is_empty() {
+            return Ok(());
+        }
+
+        // 获取 Kafka Producer
+        let producer = self.app_state.message_producer()
+            .map_err(|_| anyhow::anyhow!("Kafka Producer 未初始化"))?;
+
+        // 构建所有消息
+        let mut messages = Vec::new();
+        for (node_id, device_user_map) in &nodes {
+            let dto = NodePushDTO {
+                ws_base_msg: msg.clone(),
+                device_user_map: device_user_map.clone(),
+                hash_id: cuid,
+                uid: cuid,
+            };
+
+            let topic = format!("websocket_push_{}", node_id);
+            let message = fbc_starter::Message::new(
+                topic.clone(),
+                cuid.to_string(),
+                serde_json::to_value(&dto)?,
+            );
+
+            messages.push((topic, message));
+        }
+
+        // 批量发送所有消息
+        for (topic, message) in messages {
+            producer
+                .publish(&topic, message)
+                .await
+                .map_err(|e| anyhow::anyhow!("Kafka 发送失败: {}", e))?;
+        }
+
+        info!("批量推送到 {} 个远程节点完成", nodes.len());
+
+        Ok(())
+    }
+
     /// 将消息推送到指定节点（通过 MQ）
+    ///
+    /// 注意：此方法已被 batch_send_to_nodes_via_mq 替代，保留用于兼容性
     async fn send_to_node_via_mq(
         &self,
         node_id: &str,
