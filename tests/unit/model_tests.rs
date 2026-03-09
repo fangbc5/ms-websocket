@@ -651,3 +651,239 @@ mod vo {
         assert!(format!("{:?}", RoomClosedVO { room_id: 1, reason: "r".to_string() }).contains("RoomClosedVO"));
     }
 }
+
+// ========================
+// WSOnlineNotify VO 测试（P1 新增）
+// ========================
+
+mod ws_online_notify {
+    use ms_websocket::model::vo::ws_online_notify::{
+        WSOnlineNotify, NOTIFY_TYPE_FRIEND, NOTIFY_TYPE_GROUP,
+    };
+    use serde_json;
+
+    #[test]
+    fn test_notify_type_constants() {
+        assert_eq!(NOTIFY_TYPE_GROUP, 1);
+        assert_eq!(NOTIFY_TYPE_FRIEND, 2);
+    }
+
+    #[test]
+    fn test_friend_notify_constructor() {
+        let notify = WSOnlineNotify::friend_notify(1001, "device_abc".to_string(), 1700000000000, 5);
+        assert_eq!(notify.uid, 1001);
+        assert_eq!(notify.client_id, "device_abc");
+        assert!(notify.room_id.is_none());
+        assert_eq!(notify.last_opt_time, 1700000000000);
+        assert_eq!(notify.online_num, 5);
+        assert_eq!(notify.notify_type, NOTIFY_TYPE_FRIEND);
+    }
+
+    #[test]
+    fn test_group_notify_constructor() {
+        let notify = WSOnlineNotify::group_notify(100, 1001, "device_xyz".to_string(), 1700000000000, 10);
+        assert_eq!(notify.uid, 1001);
+        assert_eq!(notify.client_id, "device_xyz");
+        assert_eq!(notify.room_id, Some(100));
+        assert_eq!(notify.last_opt_time, 1700000000000);
+        assert_eq!(notify.online_num, 10);
+        assert_eq!(notify.notify_type, NOTIFY_TYPE_GROUP);
+    }
+
+    #[test]
+    fn test_friend_notify_serialize_camel_case() {
+        let notify = WSOnlineNotify::friend_notify(1001, "dev1".to_string(), 1700000000000, 3);
+        let json_str = serde_json::to_string(&notify).unwrap();
+
+        // camelCase 字段名
+        assert!(json_str.contains("\"clientId\""));
+        assert!(json_str.contains("\"lastOptTime\""));
+        assert!(json_str.contains("\"onlineNum\""));
+        assert!(json_str.contains("\"notifyType\""));
+
+        // 不应包含 snake_case
+        assert!(!json_str.contains("client_id"));
+        assert!(!json_str.contains("last_opt_time"));
+        assert!(!json_str.contains("online_num"));
+        assert!(!json_str.contains("notify_type"));
+    }
+
+    #[test]
+    fn test_friend_notify_skip_none_room_id() {
+        let notify = WSOnlineNotify::friend_notify(1001, "dev1".to_string(), 1700000000000, 3);
+        let json_str = serde_json::to_string(&notify).unwrap();
+
+        // room_id 为 None 时不应序列化
+        assert!(!json_str.contains("roomId"));
+    }
+
+    #[test]
+    fn test_group_notify_includes_room_id() {
+        let notify = WSOnlineNotify::group_notify(500, 1001, "dev1".to_string(), 1700000000000, 8);
+        let json_str = serde_json::to_string(&notify).unwrap();
+
+        // room_id 为 Some 时应序列化
+        assert!(json_str.contains("\"roomId\":500"));
+    }
+
+    #[test]
+    fn test_friend_notify_deserialize_roundtrip() {
+        let original = WSOnlineNotify::friend_notify(1001, "device_123".to_string(), 1700000000000, 5);
+        let json_str = serde_json::to_string(&original).unwrap();
+        let deserialized: WSOnlineNotify = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.uid, original.uid);
+        assert_eq!(deserialized.client_id, original.client_id);
+        assert_eq!(deserialized.room_id, original.room_id);
+        assert_eq!(deserialized.last_opt_time, original.last_opt_time);
+        assert_eq!(deserialized.online_num, original.online_num);
+        assert_eq!(deserialized.notify_type, original.notify_type);
+    }
+
+    #[test]
+    fn test_group_notify_deserialize_roundtrip() {
+        let original = WSOnlineNotify::group_notify(200, 2002, "device_456".to_string(), 1700000001000, 15);
+        let json_str = serde_json::to_string(&original).unwrap();
+        let deserialized: WSOnlineNotify = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.uid, original.uid);
+        assert_eq!(deserialized.client_id, original.client_id);
+        assert_eq!(deserialized.room_id, Some(200));
+        assert_eq!(deserialized.online_num, 15);
+        assert_eq!(deserialized.notify_type, NOTIFY_TYPE_GROUP);
+    }
+
+    #[test]
+    fn test_notify_clone() {
+        let original = WSOnlineNotify::friend_notify(1001, "dev".to_string(), 123, 1);
+        let cloned = original.clone();
+        assert_eq!(cloned.uid, 1001);
+        assert_eq!(cloned.client_id, "dev");
+    }
+
+    #[test]
+    fn test_notify_debug() {
+        let notify = WSOnlineNotify::friend_notify(1001, "dev".to_string(), 123, 1);
+        let debug = format!("{:?}", notify);
+        assert!(debug.contains("WSOnlineNotify"));
+    }
+
+    #[test]
+    fn test_notify_edge_case_zero_online() {
+        let notify = WSOnlineNotify::friend_notify(1001, "dev".to_string(), 0, 0);
+        assert_eq!(notify.online_num, 0);
+        assert_eq!(notify.last_opt_time, 0);
+    }
+
+    #[test]
+    fn test_notify_edge_case_large_uid() {
+        let notify = WSOnlineNotify::group_notify(u64::MAX, u64::MAX, "d".to_string(), i64::MAX, i64::MAX);
+        assert_eq!(notify.uid, u64::MAX);
+        assert_eq!(notify.room_id, Some(u64::MAX));
+        assert_eq!(notify.online_num, i64::MAX);
+    }
+}
+
+// ========================
+// CallEndReq DTO 测试（P0 新增）
+// ========================
+
+mod call_end_req {
+    use ms_websocket::model::dto::call_end_req::CallEndReq;
+    use serde_json;
+
+    #[test]
+    fn test_call_end_req_new_end() {
+        let req = CallEndReq::new_end(
+            Some(1001),
+            100,
+            Some(1),
+            true,
+            Some(true),
+            Some(2001),
+            Some(1700000000000),
+            "COMPLETED".to_string(),
+        );
+        assert!(!req.begin);
+        assert_eq!(req.uid, Some(1001));
+        assert_eq!(req.room_id, 100);
+        assert_eq!(req.tenant_id, Some(1));
+        assert_eq!(req.is_group, Some(true));
+        assert_eq!(req.medium_type, Some(true));
+        assert_eq!(req.creator, Some(2001));
+        assert_eq!(req.start_time, Some(1700000000000));
+        assert!(req.end_time.is_some()); // auto-set
+        assert_eq!(req.state, "COMPLETED");
+    }
+
+    #[test]
+    fn test_call_end_req_new_start() {
+        let req = CallEndReq::new_start(
+            1001,
+            Some(2001),
+            200,
+            Some(1),
+            "RINGING".to_string(),
+        );
+        assert!(req.begin);
+        assert_eq!(req.uid, Some(1001));
+        assert_eq!(req.room_id, 200);
+        assert_eq!(req.tenant_id, Some(1));
+        assert_eq!(req.creator, Some(2001));
+        assert!(req.start_time.is_some()); // auto-set
+        assert!(req.end_time.is_none());
+        assert_eq!(req.state, "RINGING");
+    }
+
+    #[test]
+    fn test_call_end_req_serialize_deserialize() {
+        let original = CallEndReq::new_end(
+            Some(1001),
+            100,
+            None,
+            false,
+            None,
+            None,
+            None,
+            "TIMEOUT".to_string(),
+        );
+        let json_str = serde_json::to_string(&original).unwrap();
+        let deserialized: CallEndReq = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.begin, original.begin);
+        assert_eq!(deserialized.uid, original.uid);
+        assert_eq!(deserialized.room_id, original.room_id);
+        assert_eq!(deserialized.state, original.state);
+    }
+
+    #[test]
+    fn test_call_end_req_clone_and_debug() {
+        let req = CallEndReq::new_start(1001, None, 100, None, "ONGOING".to_string());
+        let cloned = req.clone();
+        assert_eq!(cloned.state, "ONGOING");
+        let debug = format!("{:?}", req);
+        assert!(debug.contains("CallEndReq"));
+    }
+
+    #[test]
+    fn test_call_end_req_end_time_auto_set() {
+        let before = chrono::Utc::now().timestamp_millis();
+        let req = CallEndReq::new_end(None, 100, None, false, None, None, None, "X".to_string());
+        let after = chrono::Utc::now().timestamp_millis();
+
+        let end_time = req.end_time.unwrap();
+        assert!(end_time >= before);
+        assert!(end_time <= after);
+    }
+
+    #[test]
+    fn test_call_end_req_start_time_auto_set() {
+        let before = chrono::Utc::now().timestamp_millis();
+        let req = CallEndReq::new_start(1001, None, 100, None, "X".to_string());
+        let after = chrono::Utc::now().timestamp_millis();
+
+        let start_time = req.start_time.unwrap();
+        assert!(start_time >= before);
+        assert!(start_time <= after);
+    }
+}

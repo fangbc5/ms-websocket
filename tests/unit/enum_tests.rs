@@ -1,5 +1,5 @@
 /// 枚举模块测试
-use ms_websocket::enums::{WsMsgTypeEnum, WsPushTypeEnum};
+use ms_websocket::enums::{CallResponseStatus, WsMsgTypeEnum, WsPushTypeEnum};
 
 // ========================
 // WsMsgTypeEnum 测试
@@ -230,4 +230,179 @@ fn test_ws_push_type_hash() {
     set.insert(WsPushTypeEnum::All);
     set.insert(WsPushTypeEnum::User); // 重复
     assert_eq!(set.len(), 2);
+}
+
+// ========================
+// P3 响应类型枚举测试（20-30）
+// ========================
+
+#[test]
+fn test_ws_msg_type_p3_response_variants() {
+    let cases = vec![
+        (20, WsMsgTypeEnum::CallAccepted),
+        (21, WsMsgTypeEnum::CallRejected),
+        (22, WsMsgTypeEnum::Cancel),
+        (23, WsMsgTypeEnum::Dropped),
+        (24, WsMsgTypeEnum::MediaControl),
+        (25, WsMsgTypeEnum::StartSignaling),
+        (26, WsMsgTypeEnum::ScreenSharingStarted),
+        (27, WsMsgTypeEnum::ScreenSharingStopped),
+        (28, WsMsgTypeEnum::NetworkPoor),
+        (29, WsMsgTypeEnum::UserKicked),
+        (30, WsMsgTypeEnum::AllMuted),
+    ];
+
+    for (value, expected) in cases {
+        assert_eq!(
+            WsMsgTypeEnum::from(value),
+            Some(expected),
+            "from({}) 应返回 {:?}",
+            value,
+            expected
+        );
+    }
+}
+
+#[test]
+fn test_ws_msg_type_p3_desc_values() {
+    assert_eq!(WsMsgTypeEnum::CallAccepted.desc(), "通话已接通");
+    assert_eq!(WsMsgTypeEnum::CallRejected.desc(), "呼叫被拒绝");
+    assert_eq!(WsMsgTypeEnum::Cancel.desc(), "取消通话");
+    assert_eq!(WsMsgTypeEnum::Dropped.desc(), "挂断通话");
+    assert_eq!(WsMsgTypeEnum::MediaControl.desc(), "媒体控制变更");
+    assert_eq!(WsMsgTypeEnum::StartSignaling.desc(), "开始信令");
+    assert_eq!(WsMsgTypeEnum::ScreenSharingStarted.desc(), "开始屏幕共享");
+    assert_eq!(WsMsgTypeEnum::ScreenSharingStopped.desc(), "停止屏幕共享");
+    assert_eq!(WsMsgTypeEnum::NetworkPoor.desc(), "网络质量差");
+    assert_eq!(WsMsgTypeEnum::UserKicked.desc(), "用户被踢出");
+    assert_eq!(WsMsgTypeEnum::AllMuted.desc(), "全体静音");
+}
+
+#[test]
+fn test_ws_msg_type_p3_serde_roundtrip() {
+    for i in 20..=30 {
+        let variant = WsMsgTypeEnum::from(i).unwrap();
+        let json = serde_json::to_string(&variant).unwrap();
+        let deserialized: WsMsgTypeEnum = serde_json::from_str(&json).unwrap();
+        assert_eq!(variant, deserialized, "type {} serde 往返失败", i);
+    }
+}
+
+#[test]
+fn test_ws_msg_type_p3_eq_method() {
+    assert!(WsMsgTypeEnum::CallAccepted.eq(20));
+    assert!(!WsMsgTypeEnum::CallAccepted.eq(21));
+    assert!(WsMsgTypeEnum::AllMuted.eq(30));
+    assert!(!WsMsgTypeEnum::AllMuted.eq(29));
+}
+
+// ========================
+// P1 在线状态通知类型测试（40-41）
+// ========================
+
+#[test]
+fn test_ws_msg_type_online_offline_variants() {
+    assert_eq!(WsMsgTypeEnum::from(40), Some(WsMsgTypeEnum::Online));
+    assert_eq!(WsMsgTypeEnum::from(41), Some(WsMsgTypeEnum::Offline));
+}
+
+#[test]
+fn test_ws_msg_type_online_offline_desc() {
+    assert_eq!(WsMsgTypeEnum::Online.desc(), "上线通知");
+    assert_eq!(WsMsgTypeEnum::Offline.desc(), "下线通知");
+}
+
+#[test]
+fn test_ws_msg_type_online_offline_as_i32() {
+    assert_eq!(WsMsgTypeEnum::Online.as_i32(), 40);
+    assert_eq!(WsMsgTypeEnum::Offline.as_i32(), 41);
+}
+
+#[test]
+fn test_ws_msg_type_online_offline_eq() {
+    assert!(WsMsgTypeEnum::Online.eq(40));
+    assert!(!WsMsgTypeEnum::Online.eq(41));
+    assert!(WsMsgTypeEnum::Offline.eq(41));
+    assert!(!WsMsgTypeEnum::Offline.eq(40));
+}
+
+#[test]
+fn test_ws_msg_type_online_offline_serde_roundtrip() {
+    let online = WsMsgTypeEnum::Online;
+    let json = serde_json::to_string(&online).unwrap();
+    let deserialized: WsMsgTypeEnum = serde_json::from_str(&json).unwrap();
+    assert_eq!(online, deserialized);
+
+    let offline = WsMsgTypeEnum::Offline;
+    let json = serde_json::to_string(&offline).unwrap();
+    let deserialized: WsMsgTypeEnum = serde_json::from_str(&json).unwrap();
+    assert_eq!(offline, deserialized);
+}
+
+#[test]
+fn test_ws_msg_type_gap_31_to_39_invalid() {
+    // 31-39 之间没有定义值
+    for i in 31..=39 {
+        assert_eq!(
+            WsMsgTypeEnum::from(i),
+            None,
+            "from({}) 应返回 None（未定义区间）",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_ws_msg_type_42_plus_invalid() {
+    // 42+ 没有定义值
+    for i in 42..=50 {
+        assert_eq!(WsMsgTypeEnum::from(i), None, "from({}) 应返回 None", i);
+    }
+}
+
+// ========================
+// CallResponseStatus 枚举测试（P3 新增）
+// ========================
+
+#[test]
+fn test_call_response_status_of_all_variants() {
+    assert_eq!(CallResponseStatus::of(-1), Some(CallResponseStatus::Timeout));
+    assert_eq!(CallResponseStatus::of(0), Some(CallResponseStatus::Rejected));
+    assert_eq!(CallResponseStatus::of(1), Some(CallResponseStatus::Accepted));
+    assert_eq!(CallResponseStatus::of(2), Some(CallResponseStatus::Hangup));
+}
+
+#[test]
+fn test_call_response_status_of_invalid() {
+    assert_eq!(CallResponseStatus::of(-2), None);
+    assert_eq!(CallResponseStatus::of(3), None);
+    assert_eq!(CallResponseStatus::of(100), None);
+    assert_eq!(CallResponseStatus::of(i32::MAX), None);
+    assert_eq!(CallResponseStatus::of(i32::MIN), None);
+}
+
+#[test]
+fn test_call_response_status_clone_eq() {
+    let status = CallResponseStatus::Accepted;
+    let cloned = status.clone();
+    assert_eq!(status, cloned);
+    assert_ne!(CallResponseStatus::Accepted, CallResponseStatus::Rejected);
+    assert_ne!(CallResponseStatus::Timeout, CallResponseStatus::Hangup);
+}
+
+#[test]
+fn test_call_response_status_debug() {
+    let debug_str = format!("{:?}", CallResponseStatus::Accepted);
+    assert!(debug_str.contains("Accepted"));
+    let debug_str = format!("{:?}", CallResponseStatus::Timeout);
+    assert!(debug_str.contains("Timeout"));
+}
+
+#[test]
+fn test_call_response_status_as_i32() {
+    // 通过 of 反向验证值
+    assert_eq!(CallResponseStatus::Timeout as i32, -1);
+    assert_eq!(CallResponseStatus::Rejected as i32, 0);
+    assert_eq!(CallResponseStatus::Accepted as i32, 1);
+    assert_eq!(CallResponseStatus::Hangup as i32, 2);
 }

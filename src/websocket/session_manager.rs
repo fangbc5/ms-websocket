@@ -479,6 +479,10 @@ impl SessionManager {
 
     /// 注册设备到 Redis 路由表
     ///
+    /// 对应 Java NacosSessionRegistry.addUserRoute
+    /// 1. 设备指纹→节点映射（全局 Hash）
+    /// 2. 节点→设备指纹映射（节点 Set）
+    ///
     /// # 参数
     /// - `uid`: 用户 ID
     /// - `client_id`: 客户端 ID
@@ -492,22 +496,26 @@ impl SessionManager {
         use crate::cache::RouterCacheKeyBuilder;
         use redis::AsyncCommands;
 
-        // 构建 Redis Hash 键
-        let cache_key = RouterCacheKeyBuilder::build_device_node_map(String::new());
-        let field = format!("{}:{}", uid, client_id);
+        let device_field = format!("{}:{}", uid, client_id);
 
-        // 获取 Redis 连接并设置映射
         let app_state = self.app_state.as_ref()
             .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
         let mut conn = app_state.redis().await?;
-        let _: () = conn.hset(&cache_key.key, &field, node_id).await?;
+
+        // 1. 设备→节点映射（全局 Hash）
+        let cache_key = RouterCacheKeyBuilder::build_device_node_map(String::new());
+        let _: () = conn.hset(&cache_key.key, &device_field, node_id).await?;
+
+        // 2. 节点→设备映射（节点 Set）
+        let node_devices_key = RouterCacheKeyBuilder::build_node_devices(node_id);
+        let _: () = conn.sadd(&node_devices_key.key, &device_field).await?;
 
         // 更新本地缓存
         self.local_router_cache.set(uid, client_id, node_id.to_string());
 
         info!(
-            "设备已注册到 Redis: uid={}, client_id={}, node_id={}, key={}, field={}",
-            uid, client_id, node_id, cache_key.key, field
+            "设备已注册到 Redis: uid={}, client_id={}, node_id={}",
+            uid, client_id, node_id
         );
 
         Ok(())
@@ -851,6 +859,10 @@ impl SessionManager {
 
     /// 从 Redis 路由表注销设备
     ///
+    /// 对应 Java NacosSessionRegistry.removeDeviceRoute
+    /// 1. 清理设备→节点映射（全局 Hash）
+    /// 2. 清理节点→设备映射（节点 Set）
+    ///
     /// # 参数
     /// - `uid`: 用户 ID
     /// - `client_id`: 客户端 ID
@@ -858,22 +870,26 @@ impl SessionManager {
         use crate::cache::RouterCacheKeyBuilder;
         use redis::AsyncCommands;
 
-        // 构建 Redis Hash 键
-        let cache_key = RouterCacheKeyBuilder::build_device_node_map(String::new());
-        let field = format!("{}:{}", uid, client_id);
+        let device_field = format!("{}:{}", uid, client_id);
 
-        // 获取 Redis 连接并删除映射
         let app_state = self.app_state.as_ref()
             .ok_or_else(|| anyhow::anyhow!("AppState 未初始化"))?;
         let mut conn = app_state.redis().await?;
-        let _: () = conn.hdel(&cache_key.key, &field).await?;
+
+        // 1. 清理设备→节点映射（全局 Hash）
+        let cache_key = RouterCacheKeyBuilder::build_device_node_map(String::new());
+        let _: () = conn.hdel(&cache_key.key, &device_field).await?;
+
+        // 2. 清理节点→设备映射（节点 Set）
+        let node_devices_key = RouterCacheKeyBuilder::build_node_devices(&self.node_id);
+        let _: () = conn.srem(&node_devices_key.key, &device_field).await?;
 
         // 删除本地缓存
         self.local_router_cache.remove(uid, client_id);
 
         info!(
-            "设备已从 Redis 注销: uid={}, client_id={}, key={}, field={}",
-            uid, client_id, cache_key.key, field
+            "设备已从 Redis 注销: uid={}, client_id={}",
+            uid, client_id
         );
 
         Ok(())

@@ -1,1 +1,3 @@
 mod local_router_cache_tests;
+mod presence_cache_key_builder_tests;
+mod friend_cache_key_builder_tests;

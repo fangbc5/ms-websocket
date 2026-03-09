@@ -14,6 +14,7 @@ pub use session_recovery_service::SessionRecoveryService;
 pub use video_chat_service::VideoChatService;
 
 use crate::websocket::SessionManager;
+use crate::websocket::NacosSessionRegistry;
 use fbc_starter::AppState;
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ pub struct Services {
     pub video_chat_service: Arc<VideoChatService>,
     pub room_timeout_service: Arc<RoomTimeoutService>,
     pub session_recovery_service: Arc<SessionRecoveryService>,
+    pub nacos_session_registry: Arc<NacosSessionRegistry>,
 }
 
 impl Services {
@@ -79,12 +81,23 @@ impl Services {
         let session_recovery_service =
             Arc::new(SessionRecoveryService::new(video_chat_service.clone()));
 
+        // 7. 初始化 NacosSessionRegistry
+        let nacos_session_registry = Arc::new(NacosSessionRegistry::new(
+            session_manager.clone(),
+            app_state.clone(),
+            session_manager.node_id().to_string(),
+        ));
+
+        // 7.1 启动后台维护任务（指标更新 + 残留路由清理）
+        nacos_session_registry.start_background_tasks();
+
         Ok(Self {
             push_service,
             room_metadata_service,
             video_chat_service,
             room_timeout_service,
             session_recovery_service,
+            nacos_session_registry,
         })
     }
 }
