@@ -1,0 +1,22 @@
+# ms-websocket 一键部署（仅服务本身）
+# Redis 请复用 fbc-starter/docker 中的 redis，或自行通过其他 compose 起一个 Redis。
+# 在 .env.docker 中配置 APP__REDIS__URL 指向可用的 Redis 地址。
+#
+# 使用方式（在 ms-websocket 目录下）:
+#   docker compose up -d --build
+
+services:
+  ms-websocket:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ms-websocket:latest
+    container_name: ms-websocket
+    ports:
+      - "${APP__SERVER__PORT:-30001}:30001"
+    env_file:
+      - .env.docker
+    environment:
+      - APP__SERVER__ADDR=0.0.0.0
+    restart: unless-stopped
+
