@@ -21,7 +21,7 @@ const METRICS_UPDATE_INTERVAL: u64 = 5;
 const STALE_ROUTE_CLEANUP_INTERVAL: u64 = 30;
 
 /// WS 集群服务名称
-const WS_SERVICE_NAME: &str = "ws-server";
+const WS_SERVICE_NAME: &str = "ms-websocket";
 
 /// Nacos 会话注册中心
 pub struct NacosSessionRegistry {

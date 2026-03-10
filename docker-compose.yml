@@ -1,6 +1,5 @@
 # ms-websocket 一键部署（仅服务本身）
-# Redis 请复用 fbc-starter/docker 中的 redis，或自行通过其他 compose 起一个 Redis。
-# 在 .env.docker 中配置 APP__REDIS__URL 指向可用的 Redis 地址。
+# Redis / Nacos / Kafka 请复用 fbc-starter/docker 中的服务。
 #
 # 使用方式（在 ms-websocket 目录下）:
 #   docker compose up -d --build
@@ -8,15 +7,45 @@
 services:
   ms-websocket:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # 在 workspace 根目录构建，保证能找到 workspace Cargo.toml
+      context: ..
+      dockerfile: ms-websocket/Dockerfile
     image: ms-websocket:latest
     container_name: ms-websocket
     ports:
-      - "${APP__SERVER__PORT:-30001}:30001"
-    env_file:
-      - .env.docker
+      - "30001:30001"
     environment:
-      - APP__SERVER__ADDR=0.0.0.0
+      # ===== 服务器配置 =====
+      APP__SERVER__ADDR: "0.0.0.0"
+      APP__SERVER__PORT: "30001"
+      # ===== 日志配置 =====
+      APP__LOG__LEVEL: "info"
+      # ===== 节点 ID =====
+      NODE_ID: "1"
+      # ===== Redis =====
+      APP__REDIS__URL: "redis://host.docker.internal:6379"
+      APP__REDIS__PASSWORD: "123456"
+      APP__REDIS__POOL_SIZE: "10"
+      # ===== Nacos（注册发现） =====
+      APP__NACOS__SERVER_ADDRS: "host.docker.internal:8848"
+      APP__NACOS__SERVICE_NAME: "ms-websocket"
+      APP__NACOS__SUBSCRIBE_SERVICES: "ms-websocket"
+      # ===== Kafka =====
+      APP__KAFKA__BROKERS: "host.docker.internal:9092"
+      # ===== WebSocket =====
+      WRITE_CHANNEL_CAP: "1024"
+      HEARTBEAT_INTERVAL_SECS: "20"
+      HEARTBEAT_TIMEOUT_SECS: "60"
     restart: unless-stopped
+    networks:
+      - fbc-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:30001/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
+networks:
+  fbc-network:
+    external: true

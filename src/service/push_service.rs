@@ -192,7 +192,7 @@ impl PushService {
     async fn get_all_active_nodes(&self) -> anyhow::Result<HashSet<String>> {
         // 从 Nacos 获取服务实例
         // 优先使用配置的服务名称，如果没有则从已订阅的服务中查找
-        let service_name = "ws-server"; // 默认服务名称，可以从配置中获取
+        let service_name = "ms-websocket"; // 默认服务名称，与 Nacos 注册的服务名一致
 
         let instances = if let Some(instances) = get_service_instances(service_name) {
             instances
