@@ -30,6 +30,8 @@ services:
       APP__NACOS__SERVER_ADDRS: "host.docker.internal:8848"
       APP__NACOS__SERVICE_NAME: "ms-websocket"
       APP__NACOS__SUBSCRIBE_SERVICES: "ms-websocket"
+      # 元数据中的 nodeId 必须与 NODE_ID 一致
+      APP__NACOS__METADATA__NODEID: "1"
       # ===== Kafka =====
       APP__KAFKA__BROKERS: "host.docker.internal:9092"
       # ===== WebSocket =====

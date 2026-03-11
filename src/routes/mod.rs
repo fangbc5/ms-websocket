@@ -1,4 +1,6 @@
 /// 路由配置模块
+pub mod test_push;
+
 use axum::Router;
 use std::sync::Arc;
 
@@ -16,14 +18,16 @@ use crate::state::WsState;
 /// 创建应用路由
 ///
 /// # 参数
-/// - `app_state`: fbc-starter 的 AppState（包含 Kafka 生产者等）
-/// - `session_manager`: 会话管理器
-/// - `handler_chain`: 消息处理链
+/// - `ws_state`: WebSocket 状态（包含 AppState、SessionManager、Services、HandlerChain）
 pub fn create_routes(
     ws_state: Arc<WsState>,
 ) -> Router {
     Router::new()
         .route("/ws", axum::routing::get(crate::websocket::ws_route))
+        // 测试接口：推送消息到指定用户
+        .route("/api/test/push", axum::routing::post(test_push::test_push_handler))
+        // 测试接口：查询在线用户列表
+        .route("/api/test/online", axum::routing::get(test_push::online_users_handler))
         .with_state(ws_state)
 }
 

@@ -51,22 +51,29 @@ impl PushService {
         uid: u64,
         cuid: u64,
     ) -> anyhow::Result<()> {
-        self.send_push_msg(msg, vec![uid], cuid).await
+        self.send_push_msg(msg, vec![uid], cuid).await.map(|_| ())
     }
 
     /// 将消息推送到对应的用户
+    ///
+    /// 返回实际投递的本地用户数（不含通过 MQ 转发到远程节点的）
     pub async fn send_push_msg(
         &self,
         msg: WsBaseResp,
         uid_list: Vec<u64>,
         cuid: u64,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<usize> {
         if uid_list.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         // 1. 构建三级映射: 节点 → 设备指纹 → 用户ID
         let node_device_user = self.find_node_device_user(&uid_list).await?;
+
+        if node_device_user.is_empty() {
+            warn!("推送路由为空: 目标用户 {:?} 在 Redis 中无路由信息", uid_list);
+            return Ok(0);
+        }
 
         // 2. 分离本地节点和远程节点
         let mut local_uids = Vec::new();
@@ -83,8 +90,9 @@ impl PushService {
         }
 
         // 3. 本地节点直接推送
+        let mut delivered = 0;
         if !local_uids.is_empty() {
-            self.local_push(local_uids, &msg).await?;
+            delivered = self.local_push(local_uids, &msg).await?;
         }
 
         // 4. 批量发送到远程节点（通过 MQ）
@@ -92,7 +100,7 @@ impl PushService {
             self.batch_send_to_nodes_via_mq(remote_nodes, &msg, cuid).await?;
         }
 
-        Ok(())
+        Ok(delivered)
     }
 
     /// 聚合节点 → 设备 → 用户映射
@@ -223,7 +231,9 @@ impl PushService {
     }
 
     /// 本地节点直接推送
-    async fn local_push(&self, uid_list: Vec<u64>, msg: &WsBaseResp) -> anyhow::Result<()> {
+    ///
+    /// 返回实际成功推送的用户数
+    async fn local_push(&self, uid_list: Vec<u64>, msg: &WsBaseResp) -> anyhow::Result<usize> {
         let ws_msg = axum::extract::ws::Message::Text(
             serde_json::to_string(msg)
                 .unwrap_or_else(|e| {
@@ -269,7 +279,7 @@ impl PushService {
 
         info!("本地推送完成: 成功={}/{}", success_count, parallelism);
 
-        Ok(())
+        Ok(success_count)
     }
 
     /// 批量将消息推送到多个节点（通过 MQ）

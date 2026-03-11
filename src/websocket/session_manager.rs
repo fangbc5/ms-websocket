@@ -247,6 +247,22 @@ impl SessionManager {
         client_ids
     }
 
+    /// 获取所有在线用户及其会话数信息（用于测试接口）
+    pub fn get_online_users_info(&self) -> Vec<crate::routes::test_push::OnlineUserInfo> {
+        self.user_device_sessions
+            .iter()
+            .map(|entry| {
+                let uid = *entry.key();
+                let session_count: usize = entry
+                    .value()
+                    .iter()
+                    .map(|device| device.value().len())
+                    .sum();
+                crate::routes::test_push::OnlineUserInfo { uid, session_count }
+            })
+            .collect()
+    }
+
     /// 注册会话
     ///
     /// # 参数
