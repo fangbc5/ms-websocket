@@ -55,5 +55,5 @@ WORKDIR /app
 COPY --from=builder /app/target/release/ms-websocket /app/ms-websocket
 
 ENV APP__SERVER__ADDR=0.0.0.0
-EXPOSE 30001
+EXPOSE 30201
 ENTRYPOINT ["/app/ms-websocket"]

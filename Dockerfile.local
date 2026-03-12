@@ -19,7 +19,7 @@ COPY target/release/ms-websocket /app/ms-websocket
 WORKDIR /app
 
 # 暴露端口
-EXPOSE 30001
+EXPOSE 30201
 
 # 设置环境变量
 ENV APP__SERVER__ADDR=0.0.0.0

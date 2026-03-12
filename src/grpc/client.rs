@@ -1,5 +1,5 @@
 use anyhow::Result;
-use fbc_starter::{ServiceEndpoint, get_load_balancer};
+use fbc_starter::{LoadBalancer, ServiceEndpoint, get_load_balancer};
 use tonic::Request;
 use tracing::{debug, error, info};
 

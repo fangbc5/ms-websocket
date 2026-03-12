@@ -1,0 +1,10 @@
+{
+  "codeAssist": {
+    "rules": [
+      {
+        "description": "fbc-starter 微服务开发规范",
+        "source": ".gemini/styleguide.md"
+      }
+    ]
+  }
+}

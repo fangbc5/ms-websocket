@@ -13,11 +13,11 @@ services:
     image: ms-websocket:latest
     container_name: ms-websocket
     ports:
-      - "30001:30001"
+      - "30201:30201"
     environment:
       # ===== 服务器配置 =====
       APP__SERVER__ADDR: "0.0.0.0"
-      APP__SERVER__PORT: "30001"
+      APP__SERVER__PORT: "30201"
       # ===== 日志配置 =====
       APP__LOG__LEVEL: "info"
       # ===== 节点 ID =====
@@ -42,7 +42,7 @@ services:
     networks:
       - fbc-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:30001/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:30201/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
