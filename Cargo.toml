@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-fbc-starter = { path = "../fbc-starter", features = ["redis", "nacos", "balance", "producer", "consumer"] }
+fbc-starter = { workspace = true, features = ["redis", "nacos", "balance", "producer", "consumer"] }
 
 axum = { workspace = true, features = ["ws"] }
 tokio = { workspace = true }

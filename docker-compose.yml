@@ -14,39 +14,11 @@ services:
     container_name: ms-websocket
     ports:
       - "30201:30201"
-    environment:
-      # ===== 服务器配置 =====
-      APP__SERVER__ADDR: "0.0.0.0"
-      APP__SERVER__PORT: "30201"
-      # ===== 日志配置 =====
-      APP__LOG__LEVEL: "info"
-      # ===== 节点 ID =====
-      NODE_ID: "1"
-      # ===== Redis =====
-      APP__REDIS__URL: "redis://host.docker.internal:6379"
-      APP__REDIS__PASSWORD: "123456"
-      APP__REDIS__POOL_SIZE: "10"
-      # ===== Nacos（注册发现） =====
-      APP__NACOS__SERVER_ADDRS: "host.docker.internal:8848"
-      APP__NACOS__SERVICE_NAME: "ms-websocket"
-      APP__NACOS__SUBSCRIBE_SERVICES: "ms-websocket"
-      # 元数据中的 nodeId 必须与 NODE_ID 一致
-      APP__NACOS__METADATA__NODEID: "1"
-      # ===== Kafka =====
-      APP__KAFKA__BROKERS: "host.docker.internal:9092"
-      # ===== WebSocket =====
-      WRITE_CHANNEL_CAP: "1024"
-      HEARTBEAT_INTERVAL_SECS: "20"
-      HEARTBEAT_TIMEOUT_SECS: "60"
+    env_file:
+      - .env.docker
     restart: unless-stopped
     networks:
       - fbc-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:30201/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 networks:
   fbc-network:
