@@ -6,7 +6,7 @@ use fbc_starter::cache::{CacheHashKey, CacheKey, CacheKeyBuilder, ValueType};
 use crate::types::ClientId;
 
 /// 路由相关 key 的前缀（项目/环境）
-const ROUTER_KEY_PREFIX: &str = "fenghuo";
+const ROUTER_KEY_PREFIX: &str = "xilulu";
 
 /// 路由缓存键构建器
 pub struct RouterCacheKeyBuilder;
