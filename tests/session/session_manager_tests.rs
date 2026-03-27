@@ -55,15 +55,20 @@ async fn test_multi_device_sessions() {
 async fn test_same_device_multiple_sessions() {
     let manager = SessionManager::new();
 
-    // 同一用户，同一设备，多个会话（例如多个浏览器标签页）
+    // 默认不允许同设备多会话
+    assert!(!manager.allow_multi_session_per_device());
+
+    // 注册第一个会话
     let session1 = create_test_session("session1".to_string(), 1001, "device1".to_string());
-    let session2 = create_test_session("session2".to_string(), 1001, "device1".to_string());
-
     manager.register_session(session1);
-    manager.register_session(session2);
 
-    assert_eq!(manager.get_session_count(), 2);
-    assert_eq!(manager.get_user_sessions(1001).len(), 2);
+    assert_eq!(manager.get_session_count(), 1);
+    // 检查 has_device_session 返回 true
+    assert!(manager.has_device_session(1001, &"device1".to_string()));
+    // 不存在的设备应返回 false
+    assert!(!manager.has_device_session(1001, &"device2".to_string()));
+    // 不存在的用户应返回 false
+    assert!(!manager.has_device_session(9999, &"device1".to_string()));
 }
 
 #[tokio::test]
@@ -217,12 +222,10 @@ async fn test_send_to_user() {
 async fn test_send_to_device() {
     let manager = Arc::new(SessionManager::new());
 
-    // 同一设备两个会话（保持 rx 存活，否则 tx.send() 会失败）
+    // 单设备单会话（保持 rx 存活，否则 tx.send() 会失败）
     let (session1, _rx1, _srx1) = create_test_session_with_rx("session1".to_string(), 1001, "device1".to_string());
-    let (session2, _rx2, _srx2) = create_test_session_with_rx("session2".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session1);
-    manager.register_session(session2);
 
     // 发送消息到指定设备
     let msg = axum::extract::ws::Message::Text("test message".to_string().into());
@@ -230,8 +233,8 @@ async fn test_send_to_device() {
         .send_to_device(1001, &"device1".to_string(), msg)
         .await;
 
-    // 应该发送到 2 个会话（同一设备）
-    assert_eq!(sent_count, 2);
+    // 应该发送到 1 个会话（单设备单会话）
+    assert_eq!(sent_count, 1);
 }
 
 #[tokio::test]

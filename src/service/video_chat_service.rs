@@ -70,7 +70,7 @@ impl VideoChatService {
         let room_type = room.room_type;
 
         // 1. 处理房间类型
-        let mut resp = UserJoinRoomVO::new(uid as u64, room_id as u64);
+        let resp = UserJoinRoomVO::new(uid as u64, room_id as u64);
 
         if room_type == 1 {
             // 群聊

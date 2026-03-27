@@ -103,6 +103,8 @@ pub struct SessionManager {
     session_client: Arc<DashMap<SessionId, ClientId>>,
     /// 是否接受新连接
     accepting_new_connections: Arc<AtomicBool>,
+    /// 是否允许同设备多会话（默认 false）
+    allow_multi_session_per_device: bool,
     /// 节点 ID（从环境变量获取）
     node_id: String,
     /// AppState 引用（用于访问 Redis）
@@ -119,6 +121,9 @@ impl SessionManager {
     /// 创建新的会话管理器
     pub fn new() -> Self {
         let node_id = std::env::var("NODE_ID").unwrap_or_else(|_| "1".to_string());
+        let allow_multi_session_per_device = std::env::var("ALLOW_MULTI_SESSION_PER_DEVICE")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
 
         let manager = Self {
             sessions: Arc::new(DashMap::new()),
@@ -126,12 +131,15 @@ impl SessionManager {
             session_user: Arc::new(DashMap::new()),
             session_client: Arc::new(DashMap::new()),
             accepting_new_connections: Arc::new(AtomicBool::new(true)),
+            allow_multi_session_per_device,
             node_id,
             app_state: None,
             local_router_cache: Arc::new(crate::cache::LocalRouterCache::default()),
             timing_wheel: Arc::new(crate::websocket::TimingWheel::new()),
             push_service: Arc::new(OnceLock::new()),
         };
+
+        info!("同设备多会话: {}", if allow_multi_session_per_device { "允许" } else { "禁止" });
 
         // 启动心跳检查任务
         manager.start_heartbeat_check_task();
@@ -186,6 +194,21 @@ impl SessionManager {
     /// 是否接受新连接
     pub fn is_accepting_new_connections(&self) -> bool {
         self.accepting_new_connections.load(Ordering::Relaxed)
+    }
+
+    /// 是否允许同设备多会话
+    pub fn allow_multi_session_per_device(&self) -> bool {
+        self.allow_multi_session_per_device
+    }
+
+    /// 检查指定用户的指定设备是否已有活跃会话
+    pub fn has_device_session(&self, uid: UserId, client_id: &ClientId) -> bool {
+        if let Some(device_map) = self.user_device_sessions.get(&uid) {
+            if let Some(sessions) = device_map.get(client_id) {
+                return !sessions.is_empty();
+            }
+        }
+        false
     }
 
     /// 获取会话数量

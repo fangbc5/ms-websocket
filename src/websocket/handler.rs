@@ -192,6 +192,19 @@ pub async fn ws_route(
         });
     }
 
+    // 检查是否允许同设备多会话，若不允许且已有会话则拒绝连接
+    if !state.session_manager.allow_multi_session_per_device()
+        && state.session_manager.has_device_session(uid, &client_id)
+    {
+        warn!(
+            "拒绝重复连接: uid={}, client_id={} (同设备已有活跃会话)",
+            uid, client_id
+        );
+        return ws.on_upgrade(|mut socket| async move {
+            let _ = socket.close().await;
+        });
+    }
+
     let session_id = Uuid::new_v4().to_string();
 
     ws.on_upgrade(move |socket| {

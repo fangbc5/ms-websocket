@@ -330,40 +330,4 @@ impl PushService {
         Ok(())
     }
 
-    /// 将消息推送到指定节点（通过 MQ）
-    ///
-    /// 注意：此方法已被 batch_send_to_nodes_via_mq 替代，保留用于兼容性
-    async fn send_to_node_via_mq(
-        &self,
-        node_id: &str,
-        msg: &WsBaseResp,
-        device_user_map: HashMap<String, u64>,
-        cuid: u64,
-    ) -> anyhow::Result<()> {
-        // TODO: 这里要解决一下唯一标识的问题
-        let dto = NodePushDTO {
-            ws_base_msg: msg.clone(),
-            device_user_map,
-            hash_id: cuid, // 临时使用 cuid 作为 hash_id
-            uid: cuid,
-        };
-
-        // 发送到 Kafka
-        if let Ok(producer) = self.app_state.message_producer() {
-            let topic = format!("websocket_push_{}", node_id);
-            let message = fbc_starter::Message::new(
-                topic.clone(),
-                cuid.to_string(),
-                serde_json::to_value(&dto)?,
-            );
-            producer
-                .publish(&topic, message)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-        } else {
-            error!("Kafka Producer 未初始化，无法发送消息到节点: {}", node_id);
-        }
-
-        Ok(())
-    }
 }

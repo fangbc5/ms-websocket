@@ -14,9 +14,7 @@ use crate::types::SessionId;
 use dashmap::DashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::info;
 
 /// 时间轮槽位数量（60 个槽位，每个槽位 1 秒，总共 60 秒）
 const WHEEL_SIZE: usize = 60;
