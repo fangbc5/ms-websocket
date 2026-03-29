@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_cleanup_nonexistent_session() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 清理不存在的会话不应 panic
     manager.cleanup_session(&"nonexistent".to_string());
@@ -20,7 +20,7 @@ async fn test_cleanup_nonexistent_session() {
 
 #[tokio::test]
 async fn test_cleanup_same_session_twice() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session);
@@ -41,7 +41,7 @@ async fn test_cleanup_same_session_twice() {
 
 #[tokio::test]
 async fn test_refresh_nonexistent_session() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 刷新不存在的会话不应 panic
     manager.refresh_session(&"nonexistent".to_string());
@@ -49,7 +49,7 @@ async fn test_refresh_nonexistent_session() {
 
 #[tokio::test]
 async fn test_refresh_after_cleanup() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session);
@@ -66,7 +66,7 @@ async fn test_refresh_after_cleanup() {
 
 #[tokio::test]
 async fn test_send_to_nonexistent_user() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     let msg = axum::extract::ws::Message::Text("test".to_string().into());
     let sent = manager.send_to_user(9999, msg).await;
@@ -75,7 +75,7 @@ async fn test_send_to_nonexistent_user() {
 
 #[tokio::test]
 async fn test_send_to_nonexistent_device() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     // 注册一个会话
     let (session, _rx, _srx) =
@@ -92,7 +92,7 @@ async fn test_send_to_nonexistent_device() {
 
 #[tokio::test]
 async fn test_send_to_device_wrong_user() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     let (session, _rx, _srx) =
         create_test_session_with_rx("session1".to_string(), 1001, "device1".to_string());
@@ -112,7 +112,7 @@ async fn test_send_to_device_wrong_user() {
 
 #[tokio::test]
 async fn test_get_sessions_nonexistent_user() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let sessions = manager.get_user_sessions(9999);
     assert!(sessions.is_empty());
@@ -120,7 +120,7 @@ async fn test_get_sessions_nonexistent_user() {
 
 #[tokio::test]
 async fn test_get_sessions_after_all_cleaned_up() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
     manager.register_session(session);
@@ -138,7 +138,7 @@ async fn test_get_sessions_after_all_cleaned_up() {
 
 #[tokio::test]
 async fn test_multi_user_independent_sessions() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 注册不同用户的会话
     let session1 = create_test_session("s1".to_string(), 1001, "d1".to_string());
@@ -166,7 +166,7 @@ async fn test_multi_user_independent_sessions() {
 
 #[tokio::test]
 async fn test_multi_user_same_device_id() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 不同用户使用相同的 client_id（理论上每个设备有唯一指纹，但测试边界情况）
     let session1 = create_test_session("s1".to_string(), 1001, "shared_device".to_string());
@@ -194,7 +194,7 @@ async fn test_multi_user_same_device_id() {
 
 #[tokio::test]
 async fn test_same_device_three_sessions_cleanup_middle() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 同一个设备3个会话
     let s1 = create_test_session("s1".to_string(), 1001, "device1".to_string());
@@ -218,7 +218,7 @@ async fn test_same_device_three_sessions_cleanup_middle() {
 
 #[tokio::test]
 async fn test_mixed_devices_cleanup_order() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 用户在两个设备上各有2个会话
     let s1 = create_test_session("s1".to_string(), 1001, "deviceA".to_string());
@@ -257,7 +257,7 @@ async fn test_mixed_devices_cleanup_order() {
 
 #[tokio::test]
 async fn test_concurrent_register_and_cleanup() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     // 先注册 50 个
     for i in 0..50 {
@@ -306,7 +306,7 @@ async fn test_concurrent_register_and_cleanup() {
 
 #[tokio::test]
 async fn test_send_to_user_message_content() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     let (session, mut rx, _srx) =
         create_test_session_with_rx("s1".to_string(), 1001, "d1".to_string());
@@ -329,7 +329,7 @@ async fn test_send_to_user_message_content() {
 
 #[tokio::test]
 async fn test_send_to_device_message_content() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     let (session, mut rx, _srx) =
         create_test_session_with_rx("s1".to_string(), 1001, "d1".to_string());
@@ -352,7 +352,7 @@ async fn test_send_to_device_message_content() {
 
 #[tokio::test]
 async fn test_send_to_user_multiple_devices_verify_all_receive() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     let (session1, mut rx1, _srx1) =
         create_test_session_with_rx("s1".to_string(), 1001, "d1".to_string());
@@ -385,14 +385,14 @@ async fn test_send_to_user_multiple_devices_verify_all_receive() {
 
 #[tokio::test]
 async fn test_get_client_ids_empty() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let ids = manager.get_client_ids();
     assert!(ids.is_empty());
 }
 
 #[tokio::test]
 async fn test_get_client_ids_multiple_users() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let s1 = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let s2 = create_test_session("s2".to_string(), 1002, "d2".to_string());
@@ -415,7 +415,7 @@ async fn test_get_client_ids_multiple_users() {
 
 #[tokio::test]
 async fn test_node_id_default() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let node_id = manager.node_id();
     assert!(!node_id.is_empty());
 }
@@ -426,7 +426,7 @@ async fn test_node_id_default() {
 
 #[tokio::test]
 async fn test_large_scale_single_user_many_devices() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 一个用户，50 个不同设备
     for i in 0..50 {
@@ -454,7 +454,7 @@ async fn test_large_scale_single_user_many_devices() {
 
 #[tokio::test]
 async fn test_large_scale_many_users() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 200 个不同用户
     for i in 0..200 {

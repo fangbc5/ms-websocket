@@ -4,6 +4,7 @@ use ms_websocket::*;
 use fbc_starter::{AppResult, Server};
 use std::sync::Arc;
 
+use crate::config::WsConfig;
 use crate::state::WsState;
 
 #[tokio::main]
@@ -12,8 +13,12 @@ async fn main() -> AppResult<()> {
         // 获取配置和状态
         let app_state = builder.app_state().clone();
 
+        // 加载 WebSocket 配置（基于 fbc-starter BaseConfig）
+        let ws_config =
+            Arc::new(WsConfig::new(builder.config().clone()).expect("WebSocket 配置加载失败"));
+
         // 创建会话管理器
-        let mut session_manager = websocket::SessionManager::new();
+        let mut session_manager = websocket::SessionManager::new(&ws_config.websocket);
         session_manager.set_app_state(app_state.clone());
         let session_manager = Arc::new(session_manager);
 
@@ -29,6 +34,7 @@ async fn main() -> AppResult<()> {
         // 创建应用数据
         let ws_state = Arc::new(WsState::new(
             app_state,
+            ws_config,
             session_manager,
             services,
             handler_chain,

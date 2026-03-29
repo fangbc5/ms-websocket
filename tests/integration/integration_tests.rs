@@ -9,6 +9,7 @@
 ///   - Nacos 运行在 127.0.0.1:8848（可选，部分测试需要）
 use crate::common::*;
 use fbc_starter::{AppState, KafkaMessageHandler, Message};
+use ms_websocket::config::WsConfig;
 use ms_websocket::kafka::consumer::PushHandler;
 use ms_websocket::model::dto::{NodePushDTO, RouterPushDto};
 use ms_websocket::model::ws_base_resp::{WsBaseReq, WsBaseResp};
@@ -75,7 +76,7 @@ async fn create_real_app_state() -> Arc<AppState> {
 async fn create_real_ws_state() -> Arc<WsState> {
     let app_state = create_real_app_state().await;
 
-    let mut session_manager = SessionManager::new();
+    let mut session_manager = SessionManager::default();
     session_manager.set_app_state(app_state.clone());
     let session_manager = Arc::new(session_manager);
 
@@ -86,7 +87,8 @@ async fn create_real_ws_state() -> Arc<WsState> {
 
     let handler_chain = ms_websocket::routes::create_handler_chain(app_state.clone(), &services);
 
-    Arc::new(WsState::new(app_state, session_manager, services, handler_chain))
+    let config = Arc::new(WsConfig::default());
+    Arc::new(WsState::new(app_state, config, session_manager, services, handler_chain))
 }
 
 /// 创建用于 Kafka 消费的测试消息
@@ -661,7 +663,7 @@ mod routes_tests {
     async fn test_create_handler_chain() {
         let app_state = create_real_app_state().await;
 
-        let mut session_manager = SessionManager::new();
+        let mut session_manager = SessionManager::default();
         session_manager.set_app_state(app_state.clone());
         let session_manager = Arc::new(session_manager);
 

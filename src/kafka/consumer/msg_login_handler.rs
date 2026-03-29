@@ -10,12 +10,12 @@ use crate::model::dto::login_message_dto::LoginMessageDTO;
 use crate::websocket::SessionManager;
 
 pub struct MsgLoginHandler {
-    session_manager: Arc<SessionManager>,
+    _session_manager: Arc<SessionManager>,
 }
 
 impl MsgLoginHandler {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
-        Self { session_manager }
+        Self { _session_manager: session_manager }
     }
 
     /// 处理用户登录消息

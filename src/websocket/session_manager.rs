@@ -4,19 +4,19 @@
 /// - 用户→设备→会话三级映射
 /// - 在线状态同步（Redis）
 /// - 路由注册（Nacos）
-use crate::types::{ClientId, SessionId, UserId};
-use dashmap::DashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use dashmap::DashMap;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
-/// 心跳超时时间（秒）
-const HEARTBEAT_TIMEOUT: u64 = 30;
+use crate::config::WebSocketServiceConfig;
+use crate::types::{ClientId, SessionId, UserId};
 
 /// WebSocket 会话
 #[derive(Debug)]
@@ -51,8 +51,8 @@ impl Session {
             tx,
             shutdown_tx,
             last_seen: AtomicU64::new(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_secs(),
             ),
@@ -61,8 +61,8 @@ impl Session {
 
     /// 更新最后活跃时间
     pub fn touch(&self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
         self.last_seen.store(now, Ordering::Relaxed);
@@ -105,7 +105,9 @@ pub struct SessionManager {
     accepting_new_connections: Arc<AtomicBool>,
     /// 是否允许同设备多会话（默认 false）
     allow_multi_session_per_device: bool,
-    /// 节点 ID（从环境变量获取）
+    /// 心跳超时时间（秒）
+    heartbeat_timeout_secs: u64,
+    /// 节点 ID
     node_id: String,
     /// AppState 引用（用于访问 Redis）
     app_state: Option<Arc<fbc_starter::AppState>>,
@@ -119,27 +121,21 @@ pub struct SessionManager {
 
 impl SessionManager {
     /// 创建新的会话管理器
-    pub fn new() -> Self {
-        let node_id = std::env::var("NODE_ID").unwrap_or_else(|_| "1".to_string());
-        let allow_multi_session_per_device = std::env::var("ALLOW_MULTI_SESSION_PER_DEVICE")
-            .map(|v| v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
+    pub fn new(config: &WebSocketServiceConfig) -> Self {
         let manager = Self {
             sessions: Arc::new(DashMap::new()),
             user_device_sessions: Arc::new(DashMap::new()),
             session_user: Arc::new(DashMap::new()),
             session_client: Arc::new(DashMap::new()),
             accepting_new_connections: Arc::new(AtomicBool::new(true)),
-            allow_multi_session_per_device,
-            node_id,
+            allow_multi_session_per_device: config.allow_multi_session_per_device,
+            heartbeat_timeout_secs: config.heartbeat_timeout_secs,
+            node_id: config.node_id.clone(),
             app_state: None,
             local_router_cache: Arc::new(crate::cache::LocalRouterCache::default()),
             timing_wheel: Arc::new(crate::websocket::TimingWheel::new()),
             push_service: Arc::new(OnceLock::new()),
         };
-
-        info!("同设备多会话: {}", if allow_multi_session_per_device { "允许" } else { "禁止" });
 
         // 启动心跳检查任务
         manager.start_heartbeat_check_task();
@@ -168,7 +164,7 @@ impl SessionManager {
         let manager = self.clone();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1)); // 每秒 tick 一次
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
                 interval.tick().await;
 
@@ -177,7 +173,7 @@ impl SessionManager {
 
                 // 清理超时的会话
                 for session_id in expired_sessions {
-                    warn!("会话超时: session_id={}", session_id);
+                    warn!(session_id = %session_id, "会话超时");
                     manager.cleanup_session(&session_id);
                 }
             }
@@ -188,7 +184,7 @@ impl SessionManager {
     pub fn set_accepting_new_connections(&self, accepting: bool) {
         self.accepting_new_connections
             .store(accepting, Ordering::Relaxed);
-        info!("新连接接入状态: {}", accepting);
+        info!(accepting = accepting, "新连接接入状态变更");
     }
 
     /// 是否接受新连接
@@ -228,8 +224,9 @@ impl SessionManager {
             // 刷新时间轮
             let timing_wheel = self.timing_wheel.clone();
             let session_id_clone = session_id.clone();
+            let timeout = self.heartbeat_timeout_secs;
             tokio::spawn(async move {
-                timing_wheel.refresh(&session_id_clone, HEARTBEAT_TIMEOUT).await;
+                timing_wheel.refresh(&session_id_clone, timeout).await;
             });
         }
     }
@@ -300,10 +297,10 @@ impl SessionManager {
             let device_map = self
                 .user_device_sessions
                 .entry(uid)
-                .or_insert_with(|| DashMap::new());
+                .or_default();
             let mut sessions = device_map
                 .entry(client_id.clone())
-                .or_insert_with(|| HashSet::new());
+                .or_default();
             let was_empty = sessions.is_empty();
             sessions.insert(session_id.clone());
             was_empty
@@ -318,8 +315,9 @@ impl SessionManager {
         // 3. 添加到时间轮
         let timing_wheel = self.timing_wheel.clone();
         let session_id_clone = session_id.clone();
+        let timeout = self.heartbeat_timeout_secs;
         tokio::spawn(async move {
-            timing_wheel.add(session_id_clone, HEARTBEAT_TIMEOUT).await;
+            timing_wheel.add(session_id_clone, timeout).await;
         });
 
         if is_first_device {
@@ -331,19 +329,19 @@ impl SessionManager {
 
             tokio::spawn(async move {
                 if let Err(e) = manager.register_device_to_redis(uid_clone, &client_id_clone, &node_id).await {
-                    error!("注册设备到 Redis 失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
+                    error!(uid = uid_clone, client_id = %client_id_clone, error = %e, "注册设备到 Redis 失败");
                 }
                 // 同步上线状态
                 if let Err(e) = manager.sync_online(uid_clone, &client_id_clone, true).await {
-                    error!("同步上线状态失败: uid={}, client_id={}, error={}", uid_clone, client_id_clone, e);
+                    error!(uid = uid_clone, client_id = %client_id_clone, error = %e, "同步上线状态失败");
                 }
             });
 
             info!(
-                "会话注册: clientId={}, uid={}, 会话数={}, 已注册到 Redis",
-                client_id,
-                uid,
-                self.get_user_sessions(uid).len()
+                client_id = %client_id,
+                uid = uid,
+                session_count = self.get_user_sessions(uid).len(),
+                "会话注册完成，已注册到 Redis"
             );
         } else {
             // 获取当前设备会话数（避免借用冲突）
@@ -359,11 +357,11 @@ impl SessionManager {
                 }
             };
             info!(
-                "新增会话: clientId={}, uid={}, 当前设备会话数={}, 用户总会话数={}",
-                client_id,
-                uid,
-                device_session_count,
-                self.get_user_sessions(uid).len()
+                client_id = %client_id,
+                uid = uid,
+                device_session_count = device_session_count,
+                total_session_count = self.get_user_sessions(uid).len(),
+                "新增会话"
             );
         }
     }
@@ -937,6 +935,6 @@ impl SessionManager {
 
 impl Default for SessionManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(&WebSocketServiceConfig::default())
     }
 }

@@ -19,7 +19,7 @@ use std::sync::Arc;
 /// 创建带 Redis 的 SessionManager
 async fn create_redis_session_manager() -> (Arc<fbc_starter::AppState>, SessionManager) {
     let app_state = create_test_app_state().await;
-    let mut manager = SessionManager::new();
+    let mut manager = SessionManager::default();
     manager.set_app_state(app_state.clone());
     (app_state, manager)
 }

@@ -1,5 +1,6 @@
 // WS 服务器库
 pub mod cache;
+pub mod config;
 pub mod enums;
 pub mod grpc;
 pub mod kafka;

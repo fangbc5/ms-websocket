@@ -1,19 +1,21 @@
-use crate::state::WsState;
 /// WebSocket 连接处理器
 ///
 /// 处理 WebSocket 连接的建立、消息接收和连接关闭
-use crate::types::{ClientId, UserId};
-use crate::websocket::session_manager::Session;
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use axum::extract::Query;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use futures::{SinkExt, StreamExt};
-use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use crate::state::WsState;
+use crate::types::{ClientId, UserId};
+use crate::websocket::session_manager::Session;
 
 /// WebSocket 连接处理器
 struct ConnectionHandler {
@@ -61,13 +63,13 @@ impl ConnectionHandler {
                     }
                     _ => {
                         if sender.send(msg).await.is_err() {
-                            error!("发送消息失败: session_id={}", session_id);
+                            error!(session_id = %session_id, "发送消息失败");
                             break;
                         }
                     }
                 }
             }
-            info!("写入任务结束: session_id={}", session_id);
+            info!(session_id = %session_id, "写入任务结束");
         })
     }
 
@@ -75,7 +77,7 @@ impl ConnectionHandler {
     async fn handle_message(&self, msg: Message) -> bool {
         // 从 SessionManager 获取 Session，如果获取不到说明已被清理，不执行操作
         let Some(session) = self.get_session() else {
-            warn!("会话不存在，忽略消息: session_id={}", self.session_id);
+            warn!(session_id = %self.session_id, "会话不存在，忽略消息");
             return false;
         };
 
@@ -105,7 +107,7 @@ impl ConnectionHandler {
             Message::Ping(payload) => {
                 session.touch();
                 if let Err(e) = session.try_send(Message::Pong(payload)) {
-                    warn!("发送 Pong 失败: {} (通道可能已满)", e);
+                    warn!(error = %e, "发送 Pong 失败（通道可能已满）");
                 }
                 true
             }
@@ -114,7 +116,7 @@ impl ConnectionHandler {
                 true
             }
             Message::Close(_) => {
-                info!("客户端关闭连接: session_id={}", self.session_id);
+                info!(session_id = %self.session_id, "客户端关闭连接");
                 false
             }
         }
@@ -138,19 +140,19 @@ impl ConnectionHandler {
                             }
                         }
                         Some(Err(e)) => {
-                            warn!("接收消息错误: session_id={}, error={}", self.session_id, e);
+                            warn!(session_id = %self.session_id, error = %e, "接收消息错误");
                             break;
                         }
                         None => {
                             // socket 已关闭
-                            info!("主循环退出: session_id={} (socket 已关闭)", self.session_id);
+                            info!(session_id = %self.session_id, "主循环退出（socket 已关闭）");
                             break;
                         }
                     }
                 }
                 // 收到关闭信号
                 _ = shutdown.recv() => {
-                    info!("主循环退出: session_id={} (收到关闭信号)", self.session_id);
+                    info!(session_id = %self.session_id, "主循环退出（收到关闭信号）");
                     break;
                 }
             }
@@ -159,7 +161,7 @@ impl ConnectionHandler {
 
     /// 清理连接
     async fn cleanup(&self) {
-        info!("清理会话: session_id={}", self.session_id);
+        info!(session_id = %self.session_id, "清理会话");
         self.session_manager.cleanup_session(&self.session_id);
     }
 }
@@ -197,8 +199,9 @@ pub async fn ws_route(
         && state.session_manager.has_device_session(uid, &client_id)
     {
         warn!(
-            "拒绝重复连接: uid={}, client_id={} (同设备已有活跃会话)",
-            uid, client_id
+            uid = uid,
+            client_id = %client_id,
+            "拒绝重复连接（同设备已有活跃会话）"
         );
         return ws.on_upgrade(|mut socket| async move {
             let _ = socket.close().await;
@@ -206,6 +209,7 @@ pub async fn ws_route(
     }
 
     let session_id = Uuid::new_v4().to_string();
+    let write_channel_cap = state.config.websocket.write_channel_cap;
 
     ws.on_upgrade(move |socket| {
         handle_connection(
@@ -215,6 +219,7 @@ pub async fn ws_route(
             session_id,
             uid,
             client_id,
+            write_channel_cap,
         )
     })
 }
@@ -227,9 +232,10 @@ async fn handle_connection(
     session_id: String,
     uid: UserId,
     client_id: ClientId,
+    write_channel_cap: usize,
 ) {
-    // 创建发送通道（有界通道，容量 1000）
-    let (tx, rx) = mpsc::channel(1000);
+    // 创建发送通道（有界通道，容量来自配置）
+    let (tx, rx) = mpsc::channel(write_channel_cap);
 
     // 创建关闭信号
     let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -245,8 +251,10 @@ async fn handle_connection(
     session_manager.register_session(session.clone());
 
     info!(
-        "WebSocket 连接建立: session_id={}, uid={}, client_id={}",
-        session_id, uid, client_id
+        session_id = %session_id,
+        uid = uid,
+        client_id = %client_id,
+        "WebSocket 连接建立"
     );
 
     // 创建连接处理器
@@ -268,5 +276,5 @@ async fn handle_connection(
     // 等待后台任务完成
     let _ = writer_task.await;
 
-    info!("连接处理结束: session_id={}", session_id);
+    info!(session_id = %session_id, "连接处理结束");
 }

@@ -24,6 +24,7 @@ prost = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 redis = { workspace = true }
+config.workspace = true
 
 [build-dependencies]
 tonic-build = { workspace = true }

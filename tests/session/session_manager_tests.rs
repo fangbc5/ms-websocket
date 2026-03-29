@@ -6,7 +6,7 @@ use tokio::time::{sleep, Duration};
 
 #[tokio::test]
 async fn test_session_registration() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session.clone());
@@ -17,7 +17,7 @@ async fn test_session_registration() {
 
 #[tokio::test]
 async fn test_session_cleanup() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session.clone());
@@ -32,7 +32,7 @@ async fn test_session_cleanup() {
 
 #[tokio::test]
 async fn test_multi_device_sessions() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 同一用户，不同设备
     let session1 = create_test_session("session1".to_string(), 1001, "device1".to_string());
@@ -53,7 +53,7 @@ async fn test_multi_device_sessions() {
 
 #[tokio::test]
 async fn test_same_device_multiple_sessions() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 默认不允许同设备多会话
     assert!(!manager.allow_multi_session_per_device());
@@ -73,7 +73,7 @@ async fn test_same_device_multiple_sessions() {
 
 #[tokio::test]
 async fn test_session_cleanup_multi_device() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let session1 = create_test_session("session1".to_string(), 1001, "device1".to_string());
     let session2 = create_test_session("session2".to_string(), 1001, "device2".to_string());
@@ -98,7 +98,7 @@ async fn test_session_cleanup_multi_device() {
 
 #[tokio::test]
 async fn test_session_heartbeat_refresh() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session.clone());
@@ -120,7 +120,7 @@ async fn test_session_heartbeat_refresh() {
 
 #[tokio::test]
 async fn test_concurrent_session_registration() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
     let mut handles = vec![];
 
     // 并发注册 100 个会话
@@ -149,7 +149,7 @@ async fn test_concurrent_session_registration() {
 
 #[tokio::test]
 async fn test_concurrent_session_cleanup() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     // 先注册 100 个会话
     for i in 0..100 {
@@ -185,7 +185,7 @@ async fn test_concurrent_session_cleanup() {
 
 #[tokio::test]
 async fn test_accepting_new_connections() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     // 默认接受新连接
     assert!(manager.is_accepting_new_connections());
@@ -201,7 +201,7 @@ async fn test_accepting_new_connections() {
 
 #[tokio::test]
 async fn test_send_to_user() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     // 注册两个设备（保持 rx 存活，否则 tx.send() 会失败）
     let (session1, _rx1, _srx1) = create_test_session_with_rx("session1".to_string(), 1001, "device1".to_string());
@@ -220,7 +220,7 @@ async fn test_send_to_user() {
 
 #[tokio::test]
 async fn test_send_to_device() {
-    let manager = Arc::new(SessionManager::new());
+    let manager = Arc::new(SessionManager::default());
 
     // 单设备单会话（保持 rx 存活，否则 tx.send() 会失败）
     let (session1, _rx1, _srx1) = create_test_session_with_rx("session1".to_string(), 1001, "device1".to_string());
@@ -239,7 +239,7 @@ async fn test_send_to_device() {
 
 #[tokio::test]
 async fn test_node_id() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
     let node_id = manager.node_id();
 
     // 应该有节点 ID（从环境变量或默认值）

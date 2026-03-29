@@ -152,7 +152,7 @@ async fn test_timing_wheel_concurrent_add_and_tick() {
 
 #[tokio::test]
 async fn test_session_manager_heartbeat_refresh_keeps_alive() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     manager.register_session(session.clone());
@@ -171,7 +171,7 @@ async fn test_session_manager_heartbeat_refresh_keeps_alive() {
 
 #[tokio::test]
 async fn test_session_register_adds_to_timing_wheel() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let s1 = create_test_session("s1".to_string(), 1001, "d1".to_string());
     let s2 = create_test_session("s2".to_string(), 1002, "d2".to_string());
@@ -187,7 +187,7 @@ async fn test_session_register_adds_to_timing_wheel() {
 
 #[tokio::test]
 async fn test_session_cleanup_removes_from_timing_wheel() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::default();
 
     let session = create_test_session("s1".to_string(), 1001, "d1".to_string());
     manager.register_session(session);

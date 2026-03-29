@@ -92,7 +92,7 @@ pub async fn create_test_services() -> (
 ) {
     let app_state = create_test_app_state().await;
 
-    let mut session_manager = ms_websocket::websocket::SessionManager::new();
+    let mut session_manager = ms_websocket::websocket::SessionManager::default();
     session_manager.set_app_state(app_state.clone());
     let session_manager = Arc::new(session_manager);
 

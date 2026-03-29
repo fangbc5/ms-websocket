@@ -1,6 +1,9 @@
 /// 缓存过期时间常量，避免魔法数字
 use std::time::Duration;
 
+/// 路由相关 key 的前缀（项目/环境）
+pub(crate) const ROUTER_KEY_PREFIX: &str = "xilulu";
+
 /// 视频/用户房间列表缓存：15 分钟
 pub const EXPIRE_VIDEO_USER_ROOMS: Duration = Duration::from_secs(15 * 60);
 

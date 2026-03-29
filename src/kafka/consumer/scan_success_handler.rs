@@ -10,12 +10,12 @@ use crate::model::dto::scan_success_message_dto::ScanSuccessMessageDTO;
 use crate::websocket::SessionManager;
 
 pub struct ScanSuccessHandler {
-    session_manager: Arc<SessionManager>,
+    _session_manager: Arc<SessionManager>,
 }
 
 impl ScanSuccessHandler {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
-        Self { session_manager }
+        Self { _session_manager: session_manager }
     }
 
     /// 处理扫码成功消息
