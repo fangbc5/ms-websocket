@@ -70,6 +70,10 @@ pub enum WsMsgTypeEnum {
     /// 全体静音
     AllMuted = 30,
 
+    // === IM 信令类型（31+） ===
+    /// 正在输入通知
+    Typing = 31,
+
     // === 在线状态通知类型（40+） ===
     /// 上线通知
     Online = 40,
@@ -111,6 +115,7 @@ impl WsMsgTypeEnum {
             28 => Some(WsMsgTypeEnum::NetworkPoor),
             29 => Some(WsMsgTypeEnum::UserKicked),
             30 => Some(WsMsgTypeEnum::AllMuted),
+            31 => Some(WsMsgTypeEnum::Typing),
             40 => Some(WsMsgTypeEnum::Online),
             41 => Some(WsMsgTypeEnum::Offline),
             _ => None,
@@ -156,6 +161,7 @@ impl WsMsgTypeEnum {
             WsMsgTypeEnum::NetworkPoor => "网络质量差",
             WsMsgTypeEnum::UserKicked => "用户被踢出",
             WsMsgTypeEnum::AllMuted => "全体静音",
+            WsMsgTypeEnum::Typing => "正在输入",
             WsMsgTypeEnum::Online => "上线通知",
             WsMsgTypeEnum::Offline => "下线通知",
         }

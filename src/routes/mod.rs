@@ -10,7 +10,7 @@ use crate::websocket::processor::meet::{
     VideoProcessor,
 };
 use crate::websocket::processor::{
-    AckProcessor, DefaultMessageProcessor, HeartbeatProcessor, ReadProcessor,
+    AckProcessor, DefaultMessageProcessor, HeartbeatProcessor, ReadProcessor, TypingProcessor,
 };
 use crate::websocket::MessageHandlerChain;
 use crate::state::WsState;
@@ -75,6 +75,10 @@ pub fn create_handler_chain(
             services.video_chat_service.clone(),
             services.push_service.clone(),
             services.room_timeout_service.clone(),
+        )),
+        // Order: 正在输入处理器
+        Arc::new(TypingProcessor::new(
+            services.push_service.clone(),
         )),
         // Order 100: 默认处理器（最低优先级，兜底）
         Arc::new(DefaultMessageProcessor::new()),

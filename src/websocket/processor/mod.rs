@@ -6,6 +6,7 @@ pub mod meet;
 pub mod message_chain;
 pub mod message_processor;
 pub mod read;
+pub mod typing;
 
 pub use ack::AckProcessor;
 pub use default::DefaultMessageProcessor;
@@ -17,3 +18,4 @@ pub use meet::{
 pub use message_chain::MessageHandlerChain;
 pub use message_processor::MessageProcessor;
 pub use read::ReadProcessor;
+pub use typing::TypingProcessor;
