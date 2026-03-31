@@ -207,6 +207,28 @@ impl SessionManager {
         false
     }
 
+    /// 踢掉指定设备的所有旧会话（用于重连时清理残留）
+    ///
+    /// # 参数
+    /// - `uid`: 用户 ID
+    /// - `client_id`: 客户端 ID（设备指纹）
+    pub fn kick_device_sessions(&self, uid: UserId, client_id: &ClientId) {
+        let session_ids: Vec<SessionId> = {
+            let Some(device_map) = self.user_device_sessions.get(&uid) else {
+                return;
+            };
+            let Some(sessions) = device_map.get(client_id) else {
+                return;
+            };
+            sessions.iter().cloned().collect()
+        };
+
+        for session_id in session_ids {
+            warn!(session_id = %session_id, uid = uid, client_id = %client_id, "踢掉旧会话（设备重连）");
+            self.cleanup_session(&session_id);
+        }
+    }
+
     /// 获取会话数量
     pub fn get_session_count(&self) -> usize {
         self.sessions.len()

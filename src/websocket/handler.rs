@@ -194,18 +194,16 @@ pub async fn ws_route(
         });
     }
 
-    // 检查是否允许同设备多会话，若不允许且已有会话则拒绝连接
+    // 同设备重连：踢掉旧会话，允许新连接
     if !state.session_manager.allow_multi_session_per_device()
         && state.session_manager.has_device_session(uid, &client_id)
     {
         warn!(
             uid = uid,
             client_id = %client_id,
-            "拒绝重复连接（同设备已有活跃会话）"
+            "检测到同设备重复连接，踢掉旧会话"
         );
-        return ws.on_upgrade(|mut socket| async move {
-            let _ = socket.close().await;
-        });
+        state.session_manager.kick_device_sessions(uid, &client_id);
     }
 
     let session_id = Uuid::new_v4().to_string();

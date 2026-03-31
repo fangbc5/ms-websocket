@@ -75,19 +75,21 @@ impl PushService {
             return Ok(0);
         }
 
-        // 2. 分离本地节点和远程节点
-        let mut local_uids = Vec::new();
+        // 2. 分离本地节点和远程节点（同一 uid 可能有多条设备记录，必须去重）
+        let mut local_uid_set = HashSet::new();
         let mut remote_nodes = Vec::new();
 
         for (node_id, device_user_map) in node_device_user {
             if node_id == self.node_id {
-                // 收集本地用户
-                local_uids.extend(device_user_map.values().copied());
+                // 收集本地用户（HashSet 自动去重）
+                local_uid_set.extend(device_user_map.values().copied());
             } else {
                 // 收集远程节点信息
                 remote_nodes.push((node_id, device_user_map));
             }
         }
+
+        let local_uids: Vec<u64> = local_uid_set.into_iter().collect();
 
         // 3. 本地节点直接推送
         let mut delivered = 0;
