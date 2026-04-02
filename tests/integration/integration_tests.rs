@@ -357,7 +357,7 @@ mod push_service_tests {
         }
 
         // 清理
-        ws_state.session_manager.cleanup_session(&"push_s1".to_string());
+        ws_state.session_manager.cleanup_session(&"push_s1".to_string(), None);
     }
 
     #[tokio::test]
@@ -401,7 +401,7 @@ mod push_service_tests {
         // result 可能是 Ok 或 Err（取决于 Redis 中是否有路由数据）
         println!("send_push_msg_single result: {:?}", result);
 
-        ws_state.session_manager.cleanup_session(&"push_single_s1".to_string());
+        ws_state.session_manager.cleanup_session(&"push_single_s1".to_string(), None);
     }
 }
 
@@ -482,7 +482,7 @@ mod push_handler_tests {
             Err(_) => panic!("超时：未收到推送消息"),
         }
 
-        ws_state.session_manager.cleanup_session(&"ph_s1".to_string());
+        ws_state.session_manager.cleanup_session(&"ph_s1".to_string(), None);
     }
 
     #[tokio::test]
@@ -549,8 +549,8 @@ mod push_handler_tests {
             "设备2 应收到消息"
         );
 
-        ws_state.session_manager.cleanup_session(&"ph_multi_s1".to_string());
-        ws_state.session_manager.cleanup_session(&"ph_multi_s2".to_string());
+        ws_state.session_manager.cleanup_session(&"ph_multi_s1".to_string(), None);
+        ws_state.session_manager.cleanup_session(&"ph_multi_s2".to_string(), None);
     }
 }
 
@@ -609,7 +609,7 @@ mod message_router_service_tests {
         // 但不应 panic
         router_service.handle(message).await;
 
-        ws_state.session_manager.cleanup_session(&"mr_s1".to_string());
+        ws_state.session_manager.cleanup_session(&"mr_s1".to_string(), None);
     }
 
     #[tokio::test]

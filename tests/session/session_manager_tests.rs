@@ -23,7 +23,7 @@ async fn test_session_cleanup() {
     manager.register_session(session.clone());
     assert_eq!(manager.get_session_count(), 1);
 
-    manager.cleanup_session(&"session1".to_string());
+    manager.cleanup_session(&"session1".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 0);
@@ -82,14 +82,14 @@ async fn test_session_cleanup_multi_device() {
     manager.register_session(session2);
 
     // 清理一个设备的会话
-    manager.cleanup_session(&"session1".to_string());
+    manager.cleanup_session(&"session1".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 1);
     assert_eq!(manager.get_user_sessions(1001).len(), 1);
 
     // 清理最后一个会话
-    manager.cleanup_session(&"session2".to_string());
+    manager.cleanup_session(&"session2".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 0);
@@ -169,7 +169,7 @@ async fn test_concurrent_session_cleanup() {
     for i in 0..100 {
         let manager_clone = manager.clone();
         let handle = tokio::spawn(async move {
-            manager_clone.cleanup_session(&format!("session_{}", i));
+            manager_clone.cleanup_session(&format!("session_{}", i), None);
         });
         handles.push(handle);
     }

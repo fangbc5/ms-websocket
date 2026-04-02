@@ -44,7 +44,7 @@ fn test_ws_msg_type_from_all_variants() {
 fn test_ws_msg_type_from_invalid() {
     assert_eq!(WsMsgTypeEnum::from(0), None);
     assert_eq!(WsMsgTypeEnum::from(-1), None);
-    assert_eq!(WsMsgTypeEnum::from(31), None);
+    assert_eq!(WsMsgTypeEnum::from(32), None);
     assert_eq!(WsMsgTypeEnum::from(100), None);
     assert_eq!(WsMsgTypeEnum::from(i32::MAX), None);
     assert_eq!(WsMsgTypeEnum::from(i32::MIN), None);
@@ -57,8 +57,8 @@ fn test_ws_msg_type_as_i32_roundtrip() {
         let variant = WsMsgTypeEnum::from(i).unwrap();
         assert_eq!(variant.as_i32(), i, "as_i32() 应返回 {}", i);
     }
-    // 20..=30 新增的响应类型
-    for i in 20..=30 {
+    // 20..=31 新增的响应类型与信令类型
+    for i in 20..=31 {
         let variant = WsMsgTypeEnum::from(i).unwrap();
         assert_eq!(variant.as_i32(), i, "as_i32() 应返回 {}", i);
     }
@@ -250,6 +250,7 @@ fn test_ws_msg_type_p3_response_variants() {
         (28, WsMsgTypeEnum::NetworkPoor),
         (29, WsMsgTypeEnum::UserKicked),
         (30, WsMsgTypeEnum::AllMuted),
+        (31, WsMsgTypeEnum::Typing),
     ];
 
     for (value, expected) in cases {
@@ -276,11 +277,12 @@ fn test_ws_msg_type_p3_desc_values() {
     assert_eq!(WsMsgTypeEnum::NetworkPoor.desc(), "网络质量差");
     assert_eq!(WsMsgTypeEnum::UserKicked.desc(), "用户被踢出");
     assert_eq!(WsMsgTypeEnum::AllMuted.desc(), "全体静音");
+    assert_eq!(WsMsgTypeEnum::Typing.desc(), "正在输入");
 }
 
 #[test]
 fn test_ws_msg_type_p3_serde_roundtrip() {
-    for i in 20..=30 {
+    for i in 20..=31 {
         let variant = WsMsgTypeEnum::from(i).unwrap();
         let json = serde_json::to_string(&variant).unwrap();
         let deserialized: WsMsgTypeEnum = serde_json::from_str(&json).unwrap();
@@ -292,8 +294,8 @@ fn test_ws_msg_type_p3_serde_roundtrip() {
 fn test_ws_msg_type_p3_eq_method() {
     assert!(WsMsgTypeEnum::CallAccepted.eq(20));
     assert!(!WsMsgTypeEnum::CallAccepted.eq(21));
-    assert!(WsMsgTypeEnum::AllMuted.eq(30));
-    assert!(!WsMsgTypeEnum::AllMuted.eq(29));
+    assert!(WsMsgTypeEnum::Typing.eq(31));
+    assert!(!WsMsgTypeEnum::Typing.eq(30));
 }
 
 // ========================
@@ -340,9 +342,9 @@ fn test_ws_msg_type_online_offline_serde_roundtrip() {
 }
 
 #[test]
-fn test_ws_msg_type_gap_31_to_39_invalid() {
-    // 31-39 之间没有定义值
-    for i in 31..=39 {
+fn test_ws_msg_type_gap_32_to_39_invalid() {
+    // 32-39 之间没有定义值
+    for i in 32..=39 {
         assert_eq!(
             WsMsgTypeEnum::from(i),
             None,

@@ -25,6 +25,7 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 redis = { workspace = true }
 config.workspace = true
+thiserror.workspace = true
 
 [build-dependencies]
 tonic-build = { workspace = true }

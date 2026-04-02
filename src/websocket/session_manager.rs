@@ -16,6 +16,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
 use crate::config::WebSocketServiceConfig;
+use crate::error::{error_code, WsError};
 use crate::types::{ClientId, SessionId, UserId};
 
 /// WebSocket 会话
@@ -174,7 +175,7 @@ impl SessionManager {
                 // 清理超时的会话
                 for session_id in expired_sessions {
                     warn!(session_id = %session_id, "会话超时");
-                    manager.cleanup_session(&session_id);
+                    manager.cleanup_session(&session_id, None);
                 }
             }
         })
@@ -225,7 +226,10 @@ impl SessionManager {
 
         for session_id in session_ids {
             warn!(session_id = %session_id, uid = uid, client_id = %client_id, "踢掉旧会话（设备重连）");
-            self.cleanup_session(&session_id);
+            self.cleanup_session(&session_id, Some(axum::extract::ws::CloseFrame {
+                code: error_code::KICKED_BY_OTHER_DEVICE,
+                reason: WsError::KickedByOtherDevice.to_string().into(),
+            }));
         }
     }
 
@@ -389,7 +393,7 @@ impl SessionManager {
     }
 
     /// 清理会话
-    pub fn cleanup_session(&self, session_id: &SessionId) {
+    pub fn cleanup_session(&self, session_id: &SessionId, close_frame: Option<axum::extract::ws::CloseFrame>) {
         // 直接 remove，避免竞态条件
         let Some((_, session)) = self.sessions.remove(session_id) else {
             return;
@@ -407,7 +411,7 @@ impl SessionManager {
 
         // 发送 Close 消息，通知 writer_task 退出
         // 注意：即使通道满了或 writer_task 已退出，try_send 也不会阻塞
-        if let Err(e) = session.try_send(axum::extract::ws::Message::Close(None)) {
+        if let Err(e) = session.try_send(axum::extract::ws::Message::Close(close_frame)) {
             warn!("发送关闭写任务信号失败: session_id={}, error={}", session_id, e);
         } else {
             info!("发送关闭写任务信号: session_id={}", session_id);

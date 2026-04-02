@@ -84,7 +84,7 @@ async fn test_register_device_writes_to_hash_and_set() {
     assert!(is_member, "节点→设备 Set 应包含该设备");
 
     // 清理
-    manager.cleanup_session(&"sp_session_1".to_string());
+    manager.cleanup_session(&"sp_session_1".to_string(), None);
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 }
 
@@ -110,7 +110,7 @@ async fn test_unregister_device_removes_from_hash_and_set() {
     assert!(exists, "注册后 Hash 应包含设备");
 
     // 清理会话（触发 unregister_device_from_redis）
-    manager.cleanup_session(&"sp_session_2".to_string());
+    manager.cleanup_session(&"sp_session_2".to_string(), None);
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // 验证已删除
@@ -411,7 +411,7 @@ async fn test_register_cleanup_full_lifecycle() {
     }
 
     // 清理会话
-    manager.cleanup_session(&"lifecycle_s1".to_string());
+    manager.cleanup_session(&"lifecycle_s1".to_string(), None);
 
     // 轮询等待 Redis 清理完成（检查在线设备 ZSet 已移除 —— 这是 cleanup 最后一步）
     {
@@ -472,7 +472,7 @@ async fn test_multiple_sessions_same_device_only_one_register() {
     assert_eq!(manager.get_session_count(), 2);
 
     // 清理第一个会话（不应触发 unregister，因为同设备还有会话）
-    manager.cleanup_session(&"ms_sess_1".to_string());
+    manager.cleanup_session(&"ms_sess_1".to_string(), None);
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
     // 设备仍应在 Redis 中（还有 session2）
@@ -484,7 +484,7 @@ async fn test_multiple_sessions_same_device_only_one_register() {
     assert_eq!(manager.get_session_count(), 1);
 
     // 清理第二个会话（应触发 unregister）
-    manager.cleanup_session(&"ms_sess_2".to_string());
+    manager.cleanup_session(&"ms_sess_2".to_string(), None);
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     assert_eq!(manager.get_session_count(), 0);
 }
@@ -508,7 +508,7 @@ async fn test_local_cache_updated_on_register_and_cleanup() {
     // 注意：这里无法直接访问私有字段，但 register/unregister 的顺利执行就验证了功能
 
     // 清理
-    manager.cleanup_session(&"lc_sess_1".to_string());
+    manager.cleanup_session(&"lc_sess_1".to_string(), None);
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     assert_eq!(manager.get_session_count(), 0);
 }

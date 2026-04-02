@@ -14,7 +14,7 @@ async fn test_cleanup_nonexistent_session() {
     let manager = SessionManager::default();
 
     // 清理不存在的会话不应 panic
-    manager.cleanup_session(&"nonexistent".to_string());
+    manager.cleanup_session(&"nonexistent".to_string(), None);
     assert_eq!(manager.get_session_count(), 0);
 }
 
@@ -26,12 +26,12 @@ async fn test_cleanup_same_session_twice() {
     manager.register_session(session);
     assert_eq!(manager.get_session_count(), 1);
 
-    manager.cleanup_session(&"session1".to_string());
+    manager.cleanup_session(&"session1".to_string(), None);
     wait_for_async_tasks().await;
     assert_eq!(manager.get_session_count(), 0);
 
     // 再次清理同一个会话不应 panic
-    manager.cleanup_session(&"session1".to_string());
+    manager.cleanup_session(&"session1".to_string(), None);
     assert_eq!(manager.get_session_count(), 0);
 }
 
@@ -53,7 +53,7 @@ async fn test_refresh_after_cleanup() {
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
 
     manager.register_session(session);
-    manager.cleanup_session(&"session1".to_string());
+    manager.cleanup_session(&"session1".to_string(), None);
     wait_for_async_tasks().await;
 
     // 清理后刷新不应 panic
@@ -125,7 +125,7 @@ async fn test_get_sessions_after_all_cleaned_up() {
     let session = create_test_session("session1".to_string(), 1001, "device1".to_string());
     manager.register_session(session);
 
-    manager.cleanup_session(&"session1".to_string());
+    manager.cleanup_session(&"session1".to_string(), None);
     wait_for_async_tasks().await;
 
     let sessions = manager.get_user_sessions(1001);
@@ -155,7 +155,7 @@ async fn test_multi_user_independent_sessions() {
     assert_eq!(manager.get_user_sessions(1003).len(), 1);
 
     // 清理用户2的会话，不影响其他用户
-    manager.cleanup_session(&"s2".to_string());
+    manager.cleanup_session(&"s2".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 2);
@@ -180,7 +180,7 @@ async fn test_multi_user_same_device_id() {
     assert_eq!(manager.get_user_sessions(1002).len(), 1);
 
     // 清理用户1不应影响用户2
-    manager.cleanup_session(&"s1".to_string());
+    manager.cleanup_session(&"s1".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 1);
@@ -209,7 +209,7 @@ async fn test_same_device_three_sessions_cleanup_middle() {
     assert_eq!(manager.get_user_sessions(1001).len(), 3);
 
     // 清理中间的会话
-    manager.cleanup_session(&"s2".to_string());
+    manager.cleanup_session(&"s2".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 2);
@@ -235,16 +235,16 @@ async fn test_mixed_devices_cleanup_order() {
     assert_eq!(manager.get_user_sessions(1001).len(), 4);
 
     // 清理 deviceA 的所有会话
-    manager.cleanup_session(&"s1".to_string());
-    manager.cleanup_session(&"s2".to_string());
+    manager.cleanup_session(&"s1".to_string(), None);
+    manager.cleanup_session(&"s2".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 2);
     assert_eq!(manager.get_user_sessions(1001).len(), 2);
 
     // 清理 deviceB 的所有会话
-    manager.cleanup_session(&"s3".to_string());
-    manager.cleanup_session(&"s4".to_string());
+    manager.cleanup_session(&"s3".to_string(), None);
+    manager.cleanup_session(&"s4".to_string(), None);
     wait_for_async_tasks().await;
 
     assert_eq!(manager.get_session_count(), 0);
@@ -275,7 +275,7 @@ async fn test_concurrent_register_and_cleanup() {
     for i in 0..50 {
         let m = manager.clone();
         handles.push(tokio::spawn(async move {
-            m.cleanup_session(&format!("s_{}", i));
+            m.cleanup_session(&format!("s_{}", i), None);
         }));
     }
     for i in 50..100 {
@@ -444,7 +444,7 @@ async fn test_large_scale_single_user_many_devices() {
 
     // 逐个清理
     for i in 0..50 {
-        manager.cleanup_session(&format!("s_{}", i));
+        manager.cleanup_session(&format!("s_{}", i), None);
     }
     wait_for_async_tasks().await;
 

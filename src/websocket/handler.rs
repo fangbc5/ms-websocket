@@ -55,9 +55,9 @@ impl ConnectionHandler {
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg {
-                    Message::Close(_) => {
+                    Message::Close(close_frame) => {
                         // 发送 Close 消息到 socket，然后退出
-                        let _ = sender.send(Message::Close(None)).await;
+                        let _ = sender.send(Message::Close(close_frame)).await;
                         let _ = sender.close().await;
                         break;
                     }
@@ -162,7 +162,7 @@ impl ConnectionHandler {
     /// 清理连接
     async fn cleanup(&self) {
         info!(session_id = %self.session_id, "清理会话");
-        self.session_manager.cleanup_session(&self.session_id);
+        self.session_manager.cleanup_session(&self.session_id, None);
     }
 }
 

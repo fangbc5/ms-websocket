@@ -2,6 +2,7 @@
 pub mod cache;
 pub mod config;
 pub mod enums;
+pub mod error;
 pub mod grpc;
 pub mod kafka;
 pub mod model;

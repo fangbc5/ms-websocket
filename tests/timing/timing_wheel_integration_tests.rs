@@ -194,7 +194,7 @@ async fn test_session_cleanup_removes_from_timing_wheel() {
 
     wait_for_async_tasks().await;
 
-    manager.cleanup_session(&"s1".to_string());
+    manager.cleanup_session(&"s1".to_string(), None);
 
     wait_for_async_tasks().await;
 
