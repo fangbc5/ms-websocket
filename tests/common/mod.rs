@@ -96,8 +96,10 @@ pub async fn create_test_services() -> (
     session_manager.set_app_state(app_state.clone());
     let session_manager = Arc::new(session_manager);
 
+    let config = Arc::new(ms_websocket::config::WsConfig::default());
+
     let services = Arc::new(
-        ms_websocket::service::Services::new(app_state.clone(), session_manager.clone())
+        ms_websocket::service::Services::new(app_state.clone(), session_manager.clone(), config)
             .expect("Services 初始化失败"),
     );
 

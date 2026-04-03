@@ -24,7 +24,7 @@ async fn main() -> AppResult<()> {
 
         // 初始化所有服务
         let services = Arc::new(
-            service::Services::new(app_state.clone(), session_manager.clone())
+            service::Services::new(app_state.clone(), session_manager.clone(), ws_config.clone())
                 .expect("服务初始化失败"),
         );
 

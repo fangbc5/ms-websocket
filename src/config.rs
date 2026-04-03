@@ -12,6 +12,9 @@ pub struct WsConfig {
     /// WebSocket 服务配置
     #[serde(default = "default_websocket_config")]
     pub websocket: WebSocketServiceConfig,
+    /// LiveKit 配置
+    #[serde(default)]
+    pub livekit: LiveKitConfig,
 }
 
 /// WebSocket 服务配置
@@ -58,6 +61,42 @@ impl Default for WebSocketServiceConfig {
     }
 }
 
+/// LiveKit 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveKitConfig {
+    /// LiveKit API Key
+    #[serde(default = "default_livekit_api_key")]
+    pub api_key: String,
+    /// LiveKit API Secret
+    #[serde(default = "default_livekit_api_secret")]
+    pub api_secret: String,
+    /// LiveKit WebSocket URL（前端连接用）
+    #[serde(default = "default_livekit_ws_url")]
+    pub ws_url: String,
+}
+
+fn default_livekit_api_key() -> String {
+    "devkey".to_string()
+}
+
+fn default_livekit_api_secret() -> String {
+    "devsecret".to_string()
+}
+
+fn default_livekit_ws_url() -> String {
+    "ws://localhost:7880".to_string()
+}
+
+impl Default for LiveKitConfig {
+    fn default() -> Self {
+        Self {
+            api_key: default_livekit_api_key(),
+            api_secret: default_livekit_api_secret(),
+            ws_url: default_livekit_ws_url(),
+        }
+    }
+}
+
 impl WsConfig {
     /// 从 BaseConfig + 环境变量加载配置
     pub fn new(base_config: BaseConfig) -> Result<Self, config::ConfigError> {
@@ -79,17 +118,28 @@ impl WsConfig {
                 .unwrap_or_else(default_write_channel_cap),
         };
 
+        let livekit = LiveKitConfig {
+            api_key: std::env::var("APP__LIVEKIT__API_KEY")
+                .unwrap_or_else(|_| default_livekit_api_key()),
+            api_secret: std::env::var("APP__LIVEKIT__API_SECRET")
+                .unwrap_or_else(|_| default_livekit_api_secret()),
+            ws_url: std::env::var("APP__LIVEKIT__WS_URL")
+                .unwrap_or_else(|_| default_livekit_ws_url()),
+        };
+
         info!(
             node_id = %websocket.node_id,
             allow_multi_session_per_device = websocket.allow_multi_session_per_device,
             heartbeat_timeout_secs = websocket.heartbeat_timeout_secs,
             write_channel_cap = websocket.write_channel_cap,
+            livekit_ws_url = %livekit.ws_url,
             "WebSocket 配置加载完成"
         );
 
         Ok(Self {
             base: base_config,
             websocket,
+            livekit,
         })
     }
 }
@@ -99,6 +149,7 @@ impl Default for WsConfig {
         Self {
             base: BaseConfig::default(),
             websocket: WebSocketServiceConfig::default(),
+            livekit: LiveKitConfig::default(),
         }
     }
 }

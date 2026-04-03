@@ -40,6 +40,7 @@ impl Services {
     pub fn new(
         app_state: Arc<AppState>,
         session_manager: Arc<SessionManager>,
+        config: Arc<crate::config::WsConfig>,
     ) -> anyhow::Result<Self> {
         // 1. 初始化基础服务
         let room_metadata_service = Arc::new(RoomMetadataService::new(app_state.clone()));
@@ -57,12 +58,13 @@ impl Services {
         // 3.1 延迟注入: 解决 SessionManager ↔ PushService 循环依赖
         session_manager.set_push_service(push_service.clone());
 
-        // 4. 初始化 VideoChatService
+        // 4. 初始化 VideoChatService（携带 LiveKit 配置）
         let video_chat_service: Arc<VideoChatService> = {
             Arc::new(VideoChatService::new(
                 app_state.clone(),
                 push_service.clone(),
                 room_metadata_service.clone(),
+                config.livekit.clone(),
             ))
         };
 

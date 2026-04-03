@@ -136,10 +136,10 @@ impl VideoCallProcessor {
             }
         };
 
-        let push_ids_u64: Vec<u64> = push_ids.iter().map(|&id| id as u64).collect();
+        let target_uids = vec![call_request.target_uid];
         if let Err(e) = self
             .push_service
-            .send_push_msg(resp, push_ids_u64, caller_uid as u64)
+            .send_push_msg(resp, target_uids, caller_uid as u64)
             .await
         {
             error!("发送呼叫请求失败: {}", e);
@@ -246,10 +246,33 @@ impl VideoCallProcessor {
         responder_uid: UserId,
         room_id: RoomId,
     ) {
+        let room_name = format!("call_{}", room_id);
+        let livekit_url = self.video_service.livekit_ws_url().to_string();
+
+        // 生成主叫方 Token
+        let caller_token = match self.video_service.generate_livekit_token(caller_uid, &room_name) {
+            Ok(token) => token,
+            Err(e) => {
+                error!("生成主叫方 LiveKit Token 失败: {}", e);
+                return;
+            }
+        };
+
+        // 生成被叫方 Token
+        let responder_token = match self.video_service.generate_livekit_token(responder_uid, &room_name) {
+            Ok(token) => token,
+            Err(e) => {
+                error!("生成被叫方 LiveKit Token 失败: {}", e);
+                return;
+            }
+        };
+
         // 通知主叫方
         let resp_to_caller = CallAcceptedVO {
             accepted_by: responder_uid,
             room_id,
+            token: caller_token,
+            livekit_url: livekit_url.clone(),
         };
         if let Ok(resp) =
             WsBaseResp::from_data(WsMsgTypeEnum::CallAccepted.as_i32(), resp_to_caller)
@@ -264,6 +287,8 @@ impl VideoCallProcessor {
         let resp_to_responder = CallAcceptedVO {
             accepted_by: caller_uid,
             room_id,
+            token: responder_token,
+            livekit_url,
         };
         if let Ok(resp) = WsBaseResp::from_data(
             WsMsgTypeEnum::CallAccepted.as_i32(),

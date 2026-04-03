@@ -1,11 +1,13 @@
 use std::{collections::HashSet, sync::Arc};
 
 use fbc_starter::AppState;
+use livekit_api::access_token::{self, AccessToken, VideoGrants};
 use redis::AsyncCommands;
 use tracing::{info, warn};
 
 use crate::{
     cache::{UserRoomsCacheKeyBuilder, VideoRoomsCacheKeyBuilder},
+    config::LiveKitConfig,
     enums::ws_req_type::WsMsgTypeEnum,
     model::{
         WsBaseResp,
@@ -21,6 +23,7 @@ pub struct VideoChatService {
     app_state: Arc<AppState>,
     push_service: Arc<PushService>,
     room_metadata_service: Arc<RoomMetadataService>,
+    livekit_config: LiveKitConfig,
     /// 延迟注入：避免 VideoChatService ↔ RoomTimeoutService 循环引用
     room_timeout_service: std::sync::OnceLock<std::sync::Weak<RoomTimeoutService>>,
 }
@@ -31,11 +34,13 @@ impl VideoChatService {
         app_state: Arc<AppState>,
         push_service: Arc<PushService>,
         room_metadata_service: Arc<RoomMetadataService>,
+        livekit_config: LiveKitConfig,
     ) -> Self {
         Self {
             app_state,
             push_service,
             room_metadata_service,
+            livekit_config,
             room_timeout_service: std::sync::OnceLock::new(),
         }
     }
@@ -56,12 +61,50 @@ impl VideoChatService {
             .and_then(|weak| weak.upgrade())
     }
 
+    /// 生成 LiveKit Access Token
+    pub fn generate_livekit_token(
+        &self,
+        uid: UserId,
+        room_name: &str,
+    ) -> Result<String, access_token::AccessTokenError> {
+        let token = AccessToken::with_api_key(&self.livekit_config.api_key, &self.livekit_config.api_secret)
+            .with_identity(&uid.to_string())
+            .with_name(&format!("user_{}", uid))
+            .with_grants(VideoGrants {
+                room_join: true,
+                room: room_name.to_string(),
+                ..Default::default()
+            })
+            .to_jwt();
+        token
+    }
+
+    /// 获取 LiveKit WebSocket URL
+    pub fn livekit_ws_url(&self) -> &str {
+        &self.livekit_config.ws_url
+    }
+
     /// 获取房间元数据
     pub async fn get_room_metadata(&self, room_id: RoomId) -> anyhow::Result<Option<Room>> {
-        // TODO: 从缓存或数据库获取房间信息
-        // 这里需要实现缓存查询逻辑
-        warn!("get_room_metadata 未实现: room_id={}", room_id);
-        Ok(None)
+        let room_type = self.room_metadata_service.get_room_type(room_id).await?.unwrap_or(2); // 默认单聊
+        let creator = self.room_metadata_service.get_room_creator(room_id).await?.unwrap_or(0);
+        let tenant_id = self.room_metadata_service.get_tenant_id(room_id).await?.unwrap_or(0) as u64;
+
+        let now = chrono::Utc::now();
+        Ok(Some(Room {
+            id: room_id,
+            room_type,
+            hot_flag: 0,
+            active_time: now,
+            last_msg_id: 0,
+            ext_json: None,
+            create_time: now,
+            create_by: creator,
+            update_time: now,
+            update_by: creator,
+            is_del: 0,
+            tenant_id,
+        }))
     }
 
     /// 用户加入视频房间

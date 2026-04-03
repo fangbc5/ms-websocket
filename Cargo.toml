@@ -27,6 +27,9 @@ redis = { workspace = true }
 config.workspace = true
 thiserror.workspace = true
 
+# LiveKit Server SDK（Token 签发）
+livekit-api = { workspace = true }
+
 [build-dependencies]
 tonic-build = { workspace = true }
 

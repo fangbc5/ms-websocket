@@ -80,14 +80,15 @@ async fn create_real_ws_state() -> Arc<WsState> {
     session_manager.set_app_state(app_state.clone());
     let session_manager = Arc::new(session_manager);
 
+    let config = Arc::new(WsConfig::default());
+
     let services = Arc::new(
-        Services::new(app_state.clone(), session_manager.clone())
+        Services::new(app_state.clone(), session_manager.clone(), config.clone())
             .expect("Services 初始化失败"),
     );
 
     let handler_chain = ms_websocket::routes::create_handler_chain(app_state.clone(), &services);
 
-    let config = Arc::new(WsConfig::default());
     Arc::new(WsState::new(app_state, config, session_manager, services, handler_chain))
 }
 
@@ -667,8 +668,10 @@ mod routes_tests {
         session_manager.set_app_state(app_state.clone());
         let session_manager = Arc::new(session_manager);
 
+        let config = Arc::new(WsConfig::default());
+
         let services = Arc::new(
-            Services::new(app_state.clone(), session_manager.clone())
+            Services::new(app_state.clone(), session_manager.clone(), config)
                 .expect("Services 初始化失败"),
         );
 

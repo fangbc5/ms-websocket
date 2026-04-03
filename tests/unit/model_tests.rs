@@ -398,6 +398,8 @@ mod vo {
         let vo = CallAcceptedVO {
             accepted_by: 1001,
             room_id: 200,
+            token: "test_token".to_string(),
+            livekit_url: "wss://livekit.example.com".to_string(),
         };
         let json = serde_json::to_string(&vo).unwrap();
         let deserialized: CallAcceptedVO = serde_json::from_str(&json).unwrap();
@@ -629,7 +631,7 @@ mod vo {
     #[test]
     fn test_all_vos_clone_and_debug() {
         let _ = AllMutedVO { room_id: 1, muted: true, operator_id: 1 }.clone();
-        let _ = CallAcceptedVO { accepted_by: 1, room_id: 1 }.clone();
+        let _ = CallAcceptedVO { accepted_by: 1, room_id: 1, token: "t".to_string(), livekit_url: "u".to_string() }.clone();
         let _ = CallRejectedVO { rejected_by: 1 }.clone();
         let _ = CallReqVO { caller_uid: 1, target_uid: 2, room_id: 1, is_video: true }.clone();
         let _ = CallRequestVO { target_uid: 1, room_id: 1, is_video: true }.clone();
